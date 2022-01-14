@@ -17,6 +17,7 @@
 
 #include "math.h"
 #include "pointers.h"
+#include "grid.h"
 
 namespace SPARTA_NS {
 
@@ -45,6 +46,9 @@ class Update : protected Pointers {
   int ifieldfix;         // index of external field fix
   int *field_active;     // ptr to field_active flags in fix
   int fieldfreq;         // update GFIELD every this many timsteps
+
+  bool enableOptParticleMoves;    // flag to enable optimized particle moves if possible
+  bool optParticleMovesThisCycle; // flag for use of optimized particle moves this cycle
 
   int nmigrate;          // # of particles to migrate to new procs
   int *mlist;            // indices of particles to migrate
@@ -165,8 +169,17 @@ class Update : protected Pointers {
   };
 
   typedef void (Update::*FnPtr)();
-  FnPtr moveptr;             // ptr to move method
-  template < int, int > void move();
+  FnPtr moveptr;                                            // ptr to move method
+  template<int SURF> void setParticleOptMoveFlags2D();      // set particle flags for 2D optimized moves
+  template<int SURF> void setParticleOptMoveFlags3D();      // set particle flags for 3D optimized moves
+  template<int DIM> void optSingleStepMove();               // optimized single step move
+  template<int DIM> void checkCellMinDistToSplitCell();     // check min distance from cell faces to split-cell faces
+  template < int DIM, int SURF> void move();                // general move driver combining standard and opt moves
+  template<int DIM, int SURF> void standardMove();          // original move logic by particle (non-optimized move)
+  template<int DIM, int SURF> void setCellMinDistToSurf();  // set min distance from cell faces to surfaces
+  template<int DIM, int SURF> void setCellMinDistToSurfDriver();
+  void setCellSurfaceFaces3D(double S[12][3][3], Grid::ChildCell *cells, int c);
+  void setCellSurfaceFaces2D(double S[4][2][3], Grid::ChildCell *cells, int c);
 
   int perturbflag;
   typedef void (Update::*FnPtr2)(int, int, double, double *, double *);
@@ -198,6 +211,8 @@ class Update : protected Pointers {
   void field_per_particle(int, int, double, double *, double *);
   void field_per_grid(int, int, double, double *, double *);
 };
+
+template<> void Update::optSingleStepMove<3>();
 
 }
 

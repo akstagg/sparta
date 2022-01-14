@@ -52,6 +52,7 @@ enum{NOFIELD,CFIELD,PFIELD,GFIELD};             // several files
 
 #define MAXSTUCK 20
 #define EPSPARAM 1.0e-7
+#define BIG 1.0e20
 
 // either set ID or PROC/INDEX, set other to -1
 
@@ -60,6 +61,8 @@ enum{NOFIELD,CFIELD,PFIELD,GFIELD};             // several files
 #define MOVE_DEBUG_PROC -1        // owning proc
 #define MOVE_DEBUG_INDEX -1   // particle index on owning proc
 #define MOVE_DEBUG_STEP 4107    // timestep
+
+static bool setCellMinDistToSurfThisCycle = true;
 
 /* ---------------------------------------------------------------------- */
 
@@ -82,6 +85,8 @@ Update::Update(SPARTA *sparta) : Pointers(sparta)
   temp_thermal = 273.15;
   fstyle = NOFIELD;
   fieldID = NULL;
+
+  enableOptParticleMoves = false;
 
   maxmigrate = 0;
   mlist = NULL;
@@ -257,6 +262,7 @@ void Update::run(int nsteps)
 
   // loop over timesteps
 
+  int oldmaxlevel = grid->maxlevel;
   for (int i = 0; i < nsteps; i++) {
 
     ntimestep++;
@@ -279,8 +285,25 @@ void Update::run(int nsteps)
 
     // move particles
 
+    if (grid->uniform && enableOptParticleMoves) {
+      optParticleMovesThisCycle = true;
+      if (i == 0)
+        setCellMinDistToSurfThisCycle = true;
+      else {
+        if (grid->maxlevel != oldmaxlevel)
+          setCellMinDistToSurfThisCycle = true;
+        else
+          setCellMinDistToSurfThisCycle = false;
+      }
+    }
+    else {
+      optParticleMovesThisCycle = false;
+      setCellMinDistToSurfThisCycle = false;
+    }
+
     if (cellweightflag) particle->pre_weight();
     (this->*moveptr)();
+    oldmaxlevel = grid->maxlevel;
     timer->stamp(TIME_MOVE);
 
     // communicate particles
@@ -315,6 +338,103 @@ void Update::run(int nsteps)
   }
 }
 
+/* ---------------------------------------------------------------------- */
+template <int SURF> void Update::setParticleOptMoveFlags2D() {
+  double xnew[2];
+  double *x,*v;
+  Grid::ChildCell *cells = grid->cells;
+  Particle::OnePart *particles;
+  particles = particle->particles;
+  int nlocal = particle->nlocal;
+
+  for (int i=0; i<nlocal; ++i) {
+
+    if (!optParticleMovesThisCycle) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+
+    x = particles[i].x;
+    v = particles[i].v;
+
+    double distx = dt*v[0];
+    double disty = dt*v[1];
+
+    xnew[0] = x[0] + distx;
+    xnew[1] = x[1] + disty;
+
+    if (xnew[0] < domain->boxlo[0] || xnew[0] > domain->boxhi[0]) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+    if (xnew[1] < domain->boxlo[1] || xnew[1] > domain->boxhi[1]) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+    if (SURF) {
+      double dist = sqrt(distx*distx + disty*disty);
+      int icell = particles[i].icell;
+      if (dist >= cells[icell].minDistToSurf) {
+        particles[i].optMoveFlag = false;
+        continue;
+      }
+    }
+    particles[i].optMoveFlag = true;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+template <int SURF> void Update::setParticleOptMoveFlags3D() {
+  double xnew[3];
+  double *x,*v;
+  Grid::ChildCell *cells = grid->cells;
+  Particle::OnePart *particles;
+  particles = particle->particles;
+  int nlocal = particle->nlocal;
+
+  for (int i=0; i<nlocal; ++i) {
+
+    if (!optParticleMovesThisCycle) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+
+    x = particles[i].x;
+    v = particles[i].v;
+
+    double distx = dt*v[0];
+    double disty = dt*v[1];
+    double distz = dt*v[2];
+
+    xnew[0] = x[0] + distx;
+    xnew[1] = x[1] + disty;
+    xnew[2] = x[2] + distz;
+
+    if (xnew[0] < domain->boxlo[0] || xnew[0] > domain->boxhi[0]) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+    if (xnew[1] < domain->boxlo[1] || xnew[1] > domain->boxhi[1]) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+    if (xnew[2] < domain->boxlo[2] || xnew[2] > domain->boxhi[2]) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+
+    if (SURF) {
+      double dist = sqrt(distx*distx + disty*disty + distz*distz);
+      int icell = particles[i].icell;
+      if (dist >= cells[icell].minDistToSurf) {
+        particles[i].optMoveFlag = false;
+        continue;
+      }
+    }
+    particles[i].optMoveFlag = true;
+  }
+}
+
 /* ----------------------------------------------------------------------
    advect particles thru grid
    DIM = 2/3 for 2d/3d, 1 for 2d axisymmetric
@@ -322,8 +442,562 @@ void Update::run(int nsteps)
    use multiple iterations of move/comm if necessary
 ------------------------------------------------------------------------- */
 
-template < int DIM, int SURF > void Update::move()
+template < int DIM, int SURF >
+void Update::move()
 {
+  // set cell minimum distance to surface
+  if (setCellMinDistToSurfThisCycle)
+    setCellMinDistToSurfDriver<DIM,SURF>();
+
+  // set particle opt move flags even if optimized moves are not activated
+  // for this cycle.  This handles the scenario where AMR refinement requires
+  // standard particle moves and the particle opt move flags need to be reset
+  // to false.
+  if (enableOptParticleMoves) {
+    if (DIM == 3)
+      setParticleOptMoveFlags3D<SURF>();
+    else
+      setParticleOptMoveFlags2D<SURF>();
+  }
+
+  // extend migration list if necessary
+  int nlocal = particle->nlocal;
+  int maxlocal = particle->maxlocal;
+  if (nlocal > maxmigrate) {
+    maxmigrate = maxlocal;
+    memory->destroy(mlist);
+    memory->create(mlist,maxmigrate,"particle:mlist");
+  }
+  nmigrate = 0;
+  ncomm_one = 0;
+
+  // external per particle field
+  // fix calculates field acting on all owned particles
+  if (fstyle == PFIELD) modify->fix[ifieldfix]->compute_field();
+
+  // external per grid cell field
+  // evaluate once every fieldfreq steps b/c time-dependent
+  // fix calculates field acting at center point of all grid cells
+  if (fstyle == GFIELD && fieldfreq && ((ntimestep-1) % fieldfreq == 0))
+    modify->fix[ifieldfix]->compute_field();
+
+  // optimized particle moves
+  // note:  this must be called before standardMove so that optimized move
+  //        particles can be flagged for a standard move if they are moving
+  //        outside the ghost halo.
+  if (optParticleMovesThisCycle)
+    optSingleStepMove<DIM>();
+
+  // standard particle moves
+  standardMove<DIM,SURF>();
+
+  particle->sorted = 0;
+}
+
+/* ---------------------------------------------------------------------- */
+template < int DIM, int SURF >
+void Update::setCellMinDistToSurfDriver() {
+
+  setCellMinDistToSurf<DIM,SURF>();
+
+  if (grid->nsplit > 0)
+    checkCellMinDistToSplitCell<DIM>();
+}
+
+/* ---------------------------------------------------------------------- */
+template < int DIM, int SURF >
+void Update::setCellMinDistToSurf() {
+
+  Grid::ChildCell *cells = grid->cells;
+  for (int c = 0; c < grid->nlocal; ++c) {
+
+    cells[c].minDistToSurf = BIG;
+
+    // check collision with surfs
+    if (SURF) {
+
+      // check if current cell has any surfaces
+      if (cells[c].nsurf > 0) {
+        cells[c].minDistToSurf = 0.0;
+        continue;
+      }
+      else {
+
+        if (DIM == 3) {
+          // cell surface triangles
+          double S[12][3][3];
+          setCellSurfaceFaces3D(S,cells,c);
+          double minDistToSurf = BIG;
+          double P[3], Q[3];
+          double T[3][3];
+          for (bigint isurf=0; isurf<(surf->nlocal + surf->nghost); ++isurf) {
+
+            Surf::Tri *tri;
+            tri = &surf->tris[isurf];
+            T[0][0] = tri->p1[0];
+            T[0][1] = tri->p1[1];
+            T[0][2] = tri->p1[2];
+            T[1][0] = tri->p2[0];
+            T[1][1] = tri->p2[1];
+            T[1][2] = tri->p2[2];
+            T[2][0] = tri->p3[0];
+            T[2][1] = tri->p3[1];
+            T[2][2] = tri->p3[2];
+
+            for (int ctri = 0; ctri < 12; ++ctri) {
+              double dist = Geometry_PQP::TriDist(P,Q,S[ctri],T);
+              minDistToSurf = (dist < minDistToSurf) ? dist : minDistToSurf;
+            }
+          }
+          cells[c].minDistToSurf = minDistToSurf;
+        }
+        else { // DIM=2
+
+          // cell surface lines
+          double S[4][2][3];
+          setCellSurfaceFaces2D(S,cells,c);
+          double minDistToSurf = BIG;
+          double P[3],Q[3];
+          double T[2][3];
+          double VEC[3];
+          double Sv[3],Tv[3];
+          double V[3];
+          Surf::Line *line;
+          for (bigint isurf=0; isurf<(surf->nlocal + surf->nghost); ++isurf) {
+
+            line = &surf->lines[isurf];
+            T[0][0] = line->p1[0];
+            T[0][1] = line->p1[1];
+            T[0][2] = 0.0;
+            T[1][0] = line->p2[0];
+            T[1][1] = line->p2[1];
+            T[1][2] = 0.0;
+
+            for (int cline = 0; cline < 4; ++cline) {
+              Geometry_PQP::VmV(Sv,S[cline][1],S[cline][0]);
+              Geometry_PQP::VmV(Tv,T[1],T[0]);
+              Geometry_PQP::SegPoints(VEC,P,Q,S[cline][0],Sv,T[0],Tv);
+              Geometry_PQP::VmV(V,Q,P);
+              double dist = sqrt(Geometry_PQP::VdotV(V,V));
+              minDistToSurf = (dist < minDistToSurf) ? dist : minDistToSurf;
+            }
+          }
+          cells[c].minDistToSurf = minDistToSurf;
+        }
+      }
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+template <int DIM>
+void Update::checkCellMinDistToSplitCell() {
+
+  // called after setCellMinDistToSurf
+
+  double sA_2D[4][2][3];  // cell surface lines
+  double sB_2D[4][2][3];  // cell surface lines
+  double sA_3D[12][3][3]; // cell surface triangles
+  double sB_3D[12][3][3]; // cell surface triangles
+  double P[3],Q[3];
+  Grid::ChildCell *cells = grid->cells;
+
+  for (int cA = 0; cA < grid->nlocal; ++cA) {
+
+    if (DIM == 3) {
+
+      // cell surface triangles
+      setCellSurfaceFaces3D(sA_3D, cells, cA);
+      double minDistToSurf = cells[cA].minDistToSurf;
+
+      for (int cB = 0; cB < grid->nlocal + grid->nghost; ++cB) {
+        if (cB != cA) {
+          if (cells[cB].nsplit > 1) {
+            setCellSurfaceFaces3D(sB_3D, cells, cB);
+            for (int ctriA = 0; ctriA < 12; ++ctriA) {
+              for (int ctriB = 0; ctriB < 12; ++ctriB) {
+                double dist = Geometry_PQP::TriDist(P,Q,sA_3D[ctriA],sB_3D[ctriB]);
+                minDistToSurf = (dist < minDistToSurf) ? dist : minDistToSurf;
+              }
+            }
+          }
+        }
+      }
+      cells[cA].minDistToSurf = minDistToSurf;
+    }
+    else { // DIM=2
+
+      setCellSurfaceFaces2D(sA_2D, cells, cA);
+      double minDistToSurf = cells[cA].minDistToSurf;
+
+      double VEC[3];
+      double Sv[3],Tv[3];
+      double V[3];
+      for (int cB = 0; cB < grid->nlocal + grid->nghost; ++cB) {
+        if (cB != cA) {
+          if (cells[cB].nsplit > 1) {
+            setCellSurfaceFaces2D(sB_2D, cells, cB);
+            for (int clineA = 0; clineA < 4; ++clineA) {
+              for (int clineB = 0; clineB < 4; ++clineB) {
+                Geometry_PQP::VmV(Sv,sA_2D[clineA][1],sA_2D[clineA][0]);
+                Geometry_PQP::VmV(Tv,sB_2D[clineB][1],sB_2D[clineB][0]);
+                Geometry_PQP::SegPoints(VEC,P,Q,sA_2D[clineA][0],Sv,sB_2D[clineB][0],Tv);
+                Geometry_PQP::VmV(V,Q,P);
+                double dist = sqrt(Geometry_PQP::VdotV(V,V));
+                minDistToSurf = (dist < minDistToSurf) ? dist : minDistToSurf;
+              }
+            }
+          }
+        }
+      }
+      cells[cA].minDistToSurf = minDistToSurf;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+void Update::setCellSurfaceFaces2D(double S[4][2][3], Grid::ChildCell *cells, int c) {
+  // left vertical line segment
+  S[0][0][0] = cells[c].lo[0];
+  S[0][0][1] = cells[c].lo[1];
+  S[0][0][2] = 0.0;
+
+  S[0][1][0] = cells[c].lo[0];
+  S[0][1][1] = cells[c].hi[1];
+  S[0][1][2] = 0.0;
+
+  // right vertical line segment
+  S[1][0][0] = cells[c].hi[0];
+  S[1][0][1] = cells[c].lo[1];
+  S[1][0][2] = 0.0;
+
+  S[1][1][0] = cells[c].hi[0];
+  S[1][1][1] = cells[c].hi[1];
+  S[1][1][2] = 0.0;
+
+  // bottom horizontal line segment
+  S[2][0][0] = cells[c].lo[0];
+  S[2][0][1] = cells[c].lo[1];
+  S[2][0][2] = 0.0;
+
+  S[2][1][0] = cells[c].hi[0];
+  S[2][1][1] = cells[c].lo[1];
+  S[2][1][2] = 0.0;
+
+  // top horizontal line segment
+  S[3][0][0] = cells[c].lo[0];
+  S[3][0][1] = cells[c].hi[1];
+  S[3][0][2] = 0.0;
+
+  S[3][1][0] = cells[c].hi[0];
+  S[3][1][1] = cells[c].hi[1];
+  S[3][1][2] = 0.0;
+}
+
+/* ---------------------------------------------------------------------- */
+void Update::setCellSurfaceFaces3D(double S[12][3][3], Grid::ChildCell *cells, int c) {
+  // front xy face triangle #1
+  S[0][0][0] = cells[c].lo[0];
+  S[0][0][1] = cells[c].lo[1];
+  S[0][0][2] = cells[c].hi[2];
+
+  S[0][1][0] = cells[c].hi[0];
+  S[0][1][1] = cells[c].lo[1];
+  S[0][1][2] = cells[c].hi[2];
+
+  S[0][2][0] = cells[c].lo[0];
+  S[0][2][1] = cells[c].hi[1];
+  S[0][2][2] = cells[c].hi[2];
+
+  // back xy face triangle #1
+  S[1][0][0] = cells[c].lo[0];
+  S[1][0][1] = cells[c].lo[1];
+  S[1][0][2] = cells[c].lo[2];
+
+  S[1][1][0] = cells[c].hi[0];
+  S[1][1][1] = cells[c].lo[1];
+  S[1][1][2] = cells[c].lo[2];
+
+  S[1][2][0] = cells[c].lo[0];
+  S[1][2][1] = cells[c].hi[1];
+  S[1][2][2] = cells[c].lo[2];
+
+  // front xy face triangle #2
+  S[2][0][0] = cells[c].lo[0];
+  S[2][0][1] = cells[c].hi[1];
+  S[2][0][2] = cells[c].hi[2];
+
+  S[2][1][0] = cells[c].hi[0];
+  S[2][1][1] = cells[c].lo[1];
+  S[2][1][2] = cells[c].hi[2];
+
+  S[2][2][0] = cells[c].hi[0];
+  S[2][2][1] = cells[c].hi[1];
+  S[2][2][2] = cells[c].hi[2];
+
+  // back xy face triangle #2
+  S[3][0][0] = cells[c].lo[0];
+  S[3][0][1] = cells[c].hi[1];
+  S[3][0][2] = cells[c].lo[2];
+
+  S[3][1][0] = cells[c].hi[0];
+  S[3][1][1] = cells[c].lo[1];
+  S[3][1][2] = cells[c].lo[2];
+
+  S[3][2][0] = cells[c].hi[0];
+  S[3][2][1] = cells[c].hi[1];
+  S[3][2][2] = cells[c].lo[2];
+
+  // front yz face triangle #1
+  S[4][0][0] = cells[c].hi[0];
+  S[4][0][1] = cells[c].lo[1];
+  S[4][0][2] = cells[c].hi[2];
+
+  S[4][1][0] = cells[c].hi[0];
+  S[4][1][1] = cells[c].lo[1];
+  S[4][1][2] = cells[c].lo[2];
+
+  S[4][2][0] = cells[c].hi[0];
+  S[4][2][1] = cells[c].hi[1];
+  S[4][2][2] = cells[c].hi[2];
+
+  // back yz face triangle #1
+  S[5][0][0] = cells[c].lo[0];
+  S[5][0][1] = cells[c].lo[1];
+  S[5][0][2] = cells[c].hi[2];
+
+  S[5][1][0] = cells[c].lo[0];
+  S[5][1][1] = cells[c].lo[1];
+  S[5][1][2] = cells[c].lo[2];
+
+  S[5][2][0] = cells[c].lo[0];
+  S[5][2][1] = cells[c].hi[1];
+  S[5][2][2] = cells[c].hi[2];
+
+  // front yz face triangle #2
+  S[6][0][0] = cells[c].hi[0];
+  S[6][0][1] = cells[c].hi[1];
+  S[6][0][2] = cells[c].hi[2];
+
+  S[6][1][0] = cells[c].hi[0];
+  S[6][1][1] = cells[c].lo[1];
+  S[6][1][2] = cells[c].lo[2];
+
+  S[6][2][0] = cells[c].hi[0];
+  S[6][2][1] = cells[c].hi[1];
+  S[6][2][2] = cells[c].lo[2];
+
+  // back yz face triangle #2
+  S[7][0][0] = cells[c].lo[0];
+  S[7][0][1] = cells[c].hi[1];
+  S[7][0][2] = cells[c].hi[2];
+
+  S[7][1][0] = cells[c].lo[0];
+  S[7][1][1] = cells[c].lo[1];
+  S[7][1][2] = cells[c].lo[2];
+
+  S[7][2][0] = cells[c].lo[0];
+  S[7][2][1] = cells[c].hi[1];
+  S[7][2][2] = cells[c].lo[2];
+
+  // front xz face triangle #1
+  S[8][0][0] = cells[c].lo[0];
+  S[8][0][1] = cells[c].hi[1];
+  S[8][0][2] = cells[c].hi[2];
+
+  S[8][1][0] = cells[c].hi[0];
+  S[8][1][1] = cells[c].hi[1];
+  S[8][1][2] = cells[c].hi[2];
+
+  S[8][2][0] = cells[c].lo[0];
+  S[8][2][1] = cells[c].hi[1];
+  S[8][2][2] = cells[c].lo[2];
+
+  // back xz face triangle #1
+  S[9][0][0] = cells[c].lo[0];
+  S[9][0][1] = cells[c].lo[1];
+  S[9][0][2] = cells[c].hi[2];
+
+  S[9][1][0] = cells[c].hi[0];
+  S[9][1][1] = cells[c].lo[1];
+  S[9][1][2] = cells[c].hi[2];
+
+  S[9][2][0] = cells[c].lo[0];
+  S[9][2][1] = cells[c].lo[1];
+  S[9][2][2] = cells[c].lo[2];
+
+  // front xz face triangle #2
+  S[10][0][0] = cells[c].lo[0];
+  S[10][0][1] = cells[c].hi[1];
+  S[10][0][2] = cells[c].lo[2];
+
+  S[10][1][0] = cells[c].hi[0];
+  S[10][1][1] = cells[c].hi[1];
+  S[10][1][2] = cells[c].hi[2];
+
+  S[10][2][0] = cells[c].hi[0];
+  S[10][2][1] = cells[c].hi[1];
+  S[10][2][2] = cells[c].lo[2];
+
+  // back xz face triangle #2
+  S[11][0][0] = cells[c].lo[0];
+  S[11][0][1] = cells[c].lo[1];
+  S[11][0][2] = cells[c].lo[2];
+
+  S[11][1][0] = cells[c].hi[0];
+  S[11][1][1] = cells[c].lo[1];
+  S[11][1][2] = cells[c].hi[2];
+
+  S[11][2][0] = cells[c].hi[0];
+  S[11][2][1] = cells[c].lo[1];
+  S[11][2][2] = cells[c].lo[2];
+
+}
+
+/* ---------------------------------------------------------------------- */
+template<int DIM>
+void Update::optSingleStepMove() {
+  Grid::ChildCell *cells = grid->cells;
+  Particle::OnePart *particles;
+  particles = particle->particles;
+
+  double dx = (domain->boxhi[0] - domain->boxlo[0])/grid->unx;
+  double dy = (domain->boxhi[1] - domain->boxlo[1])/grid->uny;
+
+  double *x,*v;
+  double xnew[2];
+  double vperturb[2] = {0.};
+  double dt = update->dt;
+  double dtremain;
+  int ip,jp;
+
+  int nlocal = particle->nlocal;
+  for (int i = 0; i < nlocal; i++) {
+    if (!particles[i].optMoveFlag) continue;
+
+    x = particles[i].x;
+    v = particles[i].v;
+
+    if (particles[i].flag == PINSERT)
+      dtremain = particles[i].dtremain;
+    else
+      dtremain = dt;
+
+    xnew[0] = x[0] + dtremain*v[0];
+    xnew[1] = x[1] + dtremain*v[1];
+
+    if (perturbflag) {
+      vperturb[0] = v[0];
+      vperturb[1] = v[1];
+      (this->*moveperturb)(i,particles[i].icell,dtremain,xnew,vperturb);
+    }
+
+    ip = static_cast<int>((xnew[0] - domain->boxlo[0])/dx);
+    jp = static_cast<int>((xnew[1] - domain->boxlo[1])/dy);
+
+    int cellIdx = jp*grid->unx + ip + 1;
+    int idx = (*(grid->hash))[cellIdx];
+
+    // particle moving outside ghost cells will be flagged for standard move
+    if (idx == 0) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+
+    // reset particle values
+    x[0] = xnew[0];
+    x[1] = xnew[1];
+    if (perturbflag) {
+      v[0] = vperturb[0];
+      v[1] = vperturb[1];
+    }
+    int icell = idx - 1;
+    particles[i].icell = icell;
+    particles[i].flag = PKEEP;
+    if (cells[particles[i].icell].proc != me) {
+      mlist[nmigrate++] = i;
+      ncomm_one++;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+// specialization for DIM=3
+template<>
+void Update::optSingleStepMove<3>() {
+  Grid::ChildCell *cells = grid->cells;
+  Particle::OnePart *particles;
+  particles = particle->particles;
+
+  double dx = (domain->boxhi[0] - domain->boxlo[0])/grid->unx;
+  double dy = (domain->boxhi[1] - domain->boxlo[1])/grid->uny;
+  double dz = (domain->boxhi[2] - domain->boxlo[2])/grid->unz;
+
+  double *x,*v;
+  double xnew[3];
+  double vperturb[3] = {0.};
+  double dt = update->dt;
+  double dtremain;
+  int ip,jp,kp;
+
+  int nlocal = particle->nlocal;
+  for (int i = 0; i < nlocal; i++) {
+    if (!particles[i].optMoveFlag) continue;
+
+    x = particles[i].x;
+    v = particles[i].v;
+
+    if (particles[i].flag == PINSERT)
+      dtremain = particles[i].dtremain;
+    else
+      dtremain = dt;
+
+    xnew[0] = x[0] + dtremain*v[0];
+    xnew[1] = x[1] + dtremain*v[1];
+    xnew[2] = x[2] + dtremain*v[2];
+
+    if (perturbflag) {
+      vperturb[0] = v[0];
+      vperturb[1] = v[1];
+      vperturb[2] = v[2];
+      (this->*moveperturb)(i,particles[i].icell,dtremain,xnew,vperturb);
+    }
+
+    ip = static_cast<int>((xnew[0] - domain->boxlo[0])/dx);
+    jp = static_cast<int>((xnew[1] - domain->boxlo[1])/dy);
+    kp = static_cast<int>((xnew[2] - domain->boxlo[2])/dz);
+
+    int cellIdx = (kp*grid->uny + jp)*grid->unx + ip + 1;
+    int idx = (*(grid->hash))[cellIdx];
+
+    // particle moving outside ghost cells will be flagged for standard move
+    if (idx == 0) {
+      particles[i].optMoveFlag = false;
+      continue;
+    }
+
+    // reset particle values
+    x[0] = xnew[0];
+    x[1] = xnew[1];
+    x[2] = xnew[2];
+    if (perturbflag) {
+      v[0] = vperturb[0];
+      v[1] = vperturb[1];
+      v[2] = vperturb[2];
+    }
+    particles[i].icell = idx - 1;
+    particles[i].flag = PKEEP;
+    if (cells[particles[i].icell].proc != me) {
+      mlist[nmigrate++] = i;
+      ncomm_one++;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+template < int DIM, int SURF >
+void Update::standardMove() {
+
   bool hitflag;
   int m,icell,icell_original,nmask,outface,bflag,nflag,pflag,itmp;
   int side,minside,minsurf,nsurf,cflag,isurf,exclude,stuck_iterate;
@@ -345,21 +1019,11 @@ template < int DIM, int SURF > void Update::move()
 
   if (DIM < 3) xnew[2] = xc[2] = 0.0;
 
-  // extend migration list if necessary
-
   int nlocal = particle->nlocal;
-  int maxlocal = particle->maxlocal;
-
-  if (nlocal > maxmigrate) {
-    maxmigrate = maxlocal;
-    memory->destroy(mlist);
-    memory->create(mlist,maxmigrate,"particle:mlist");
-  }
 
   // counters
-
   niterate = 0;
-  ntouch_one = ncomm_one = 0;
+  ntouch_one = 0;
   nboundary_one = nexit_one = 0;
   nscheck_one = nscollide_one = 0;
   surf->nreact_one = 0;
@@ -371,18 +1035,7 @@ template < int DIM, int SURF > void Update::move()
   Surf::Tri *tris = surf->tris;
   Surf::Line *lines = surf->lines;
   double dt = update->dt;
-
-  // external per particle field
-  // fix calculates field acting on all owned particles
-
-  if (fstyle == PFIELD) modify->fix[ifieldfix]->compute_field();
-
-  // external per grid cell field
-  // evaluate once every fieldfreq steps b/c time-dependent
-  // fix calculates field acting at center point of all grid cells
-  
-  if (fstyle == GFIELD && fieldfreq && ((ntimestep-1) % fieldfreq == 0)) 
-    modify->fix[ifieldfix]->compute_field();
+  int nmigrate_opt = nmigrate;
 
   // one or more loops over particles
   // first iteration = all my particles
@@ -401,6 +1054,9 @@ template < int DIM, int SURF > void Update::move()
     }
 
     for (int i = pstart; i < pstop; i++) {
+
+      if (particles[i].optMoveFlag) continue;
+
       pflag = particles[i].flag;
 
       // received from another proc and move is done
@@ -427,15 +1083,13 @@ template < int DIM, int SURF > void Update::move()
         xnew[0] = x[0] + dtremain*v[0];
         xnew[1] = x[1] + dtremain*v[1];
         if (DIM != 2) xnew[2] = x[2] + dtremain*v[2];
-        if (perturbflag) 
-          (this->*moveperturb)(i,particles[i].icell,dtremain,xnew,v);
+        if (perturbflag) (this->*moveperturb)(i,particles[i].icell,dtremain,xnew,v);
       } else if (pflag == PINSERT) {
         dtremain = particles[i].dtremain;
         xnew[0] = x[0] + dtremain*v[0];
         xnew[1] = x[1] + dtremain*v[1];
         if (DIM != 2) xnew[2] = x[2] + dtremain*v[2];
-        if (perturbflag) 
-          (this->*moveperturb)(i,particles[i].icell,dtremain,xnew,v);
+        if (perturbflag) (this->*moveperturb)(i,particles[i].icell,dtremain,xnew,v);
       } else if (pflag == PENTRY) {
         icell = particles[i].icell;
         if (cells[icell].nsplit > 1) {
@@ -627,15 +1281,15 @@ template < int DIM, int SURF > void Update::move()
 
         if (SURF) {
 
-	  // skip surf checks if particle flagged as EXITing this cell
-	  // then unset pflag so not checked again for this particle
+          // skip surf checks if particle flagged as EXITing this cell
+          // then unset pflag so not checked again for this particle
 
           nsurf = cells[icell].nsurf;
-	  if (pflag == PEXIT) {
-	    nsurf = 0;
-	    pflag = 0;
-	  }
-	  nscheck_one += nsurf;
+          if (pflag == PEXIT) {
+            nsurf = 0;
+            pflag = 0;
+          }
+          nscheck_one += nsurf;
 
           if (nsurf) {
 
@@ -678,10 +1332,10 @@ template < int DIM, int SURF > void Update::move()
             cflag = 0;
             minparam = 2.0;
             csurfs = cells[icell].csurfs;
-	
+
             for (m = 0; m < nsurf; m++) {
               isurf = csurfs[m];
-	
+
               if (DIM > 1) {
                 if (isurf == exclude) continue;
               }
@@ -783,8 +1437,8 @@ template < int DIM, int SURF > void Update::move()
 
             } // END of for loop over surfs
 
-	    // tri/line = surf that particle hit first
-	
+            // tri/line = surf that particle hit first
+
             if (cflag) {
               if (DIM == 3) tri = &tris[minsurf];
               if (DIM != 3) line = &lines[minsurf];
@@ -913,12 +1567,12 @@ template < int DIM, int SURF > void Update::move()
         // no cell crossing and no surface collision
         // set final particle position to xnew, then break from advection loop
         // for axisymmetry, must first remap linear xnew and v
-	// for axisymmetry, check if final particle position is within cell
-	//   can be rare epsilon round-off cases where particle ends up outside
-	//     of final cell curved surf when move logic thinks it is inside
-	//   example is when Geom::axi_horizontal_line() says no crossing of cell edge
-	//     but axi_remap() puts particle outside the cell
-	//   in this case, just DISCARD particle and tally it to naxibad
+        // for axisymmetry, check if final particle position is within cell
+        //   can be rare epsilon round-off cases where particle ends up outside
+        //     of final cell curved surf when move logic thinks it is inside
+        //   example is when Geom::axi_horizontal_line() says no crossing of cell edge
+        //     but axi_remap() puts particle outside the cell
+        //   in this case, just DISCARD particle and tally it to naxibad
         // if migrating to another proc,
         //   flag as PDONE so new proc won't move it more on this step
 
@@ -927,13 +1581,13 @@ template < int DIM, int SURF > void Update::move()
           x[0] = xnew[0];
           x[1] = xnew[1];
           if (DIM == 3) x[2] = xnew[2];
-	  if (DIM == 1) {
-	    if (x[1] < lo[1] || x[1] > hi[1]) {
-	      particles[i].flag = PDISCARD;
-	      naxibad++;
-	      break;
-	    }
-	  }
+          if (DIM == 1) {
+            if (x[1] < lo[1] || x[1] > hi[1]) {
+              particles[i].flag = PDISCARD;
+              naxibad++;
+              break;
+            }
+          }
           if (cells[icell].proc != me) particles[i].flag = PDONE;
           break;
         }
@@ -969,8 +1623,8 @@ template < int DIM, int SURF > void Update::move()
         // if parent, use id_find_child to identify child cell
         //   result can be -1 for unknown cell, occurs when:
         //   (a) particle hits face of ghost child cell
-	//   (b) the ghost cell extends beyond ghost halo
-	//   (c) cell on other side of face is a parent
+        //   (b) the ghost cell extends beyond ghost halo
+        //   (c) cell on other side of face is a parent
         //   (d) its child, which the particle is in, is entirely beyond my halo
         // if new cell is child and surfs exist, check if a split cell
 
@@ -988,9 +1642,9 @@ template < int DIM, int SURF > void Update::move()
               icell = split2d(icell,x);
           }
         } else if (nflag == NPARENT) {
-	  pcell = &pcells[neigh[outface]];
+          pcell = &pcells[neigh[outface]];
           icell = grid->id_find_child(pcell->id,cells[icell].level,
-				      pcell->lo,pcell->hi,x);
+                                      pcell->lo,pcell->hi,x);
           if (icell >= 0) {
             if (DIM == 3 && SURF) {
               if (cells[icell].nsplit > 1 && cells[icell].nsurf >= 0)
@@ -1057,9 +1711,9 @@ template < int DIM, int SURF > void Update::move()
                   icell = split2d(icell,x);
               }
             } else if (nflag == NPBPARENT) {
-	      pcell = &pcells[neigh[outface]];
-	      icell = grid->id_find_child(pcell->id,cells[icell].level,
-					  pcell->lo,pcell->hi,x);
+              pcell = &pcells[neigh[outface]];
+              icell = grid->id_find_child(pcell->id,cells[icell].level,
+                                          pcell->lo,pcell->hi,x);
               if (icell >= 0) {
                 if (DIM == 3 && SURF) {
                   if (cells[icell].nsplit > 1 && cells[icell].nsurf >= 0)
@@ -1144,7 +1798,7 @@ template < int DIM, int SURF > void Update::move()
       particles[i].icell = icell;
 
       if (particles[i].flag != PKEEP) {
-        mlist[nmigrate++] = i;
+        mlist[nmigrate_opt + nmigrate++] = i;
         if (particles[i].flag != PDISCARD) {
           if (cells[icell].proc == me) {
             char str[128];
@@ -1172,11 +1826,11 @@ template < int DIM, int SURF > void Update::move()
     timer->stamp(TIME_MOVE);
     MPI_Allreduce(&entryexit,&any_entryexit,1,MPI_INT,MPI_MAX,world);
     timer->stamp();
-
     if (any_entryexit) {
       timer->stamp(TIME_MOVE);
-      pstart = comm->migrate_particles(nmigrate,mlist);
+      pstart = comm->migrate_particles(nmigrate_opt + nmigrate,mlist);
       timer->stamp(TIME_COMM);
+      nmigrate_opt = 0;
       pstop = particle->nlocal;
       if (pstop-pstart > maxmigrate) {
         maxmigrate = pstop-pstart;
@@ -1186,12 +1840,11 @@ template < int DIM, int SURF > void Update::move()
     } else break;
 
     // END of single move/migrate iteration
-
   }
-
   // END of all move/migrate iterations
 
-  particle->sorted = 0;
+  if (nmigrate_opt > 0)
+    nmigrate += nmigrate_opt;
 
   // accumulate running totals
 
@@ -1531,6 +2184,9 @@ void Update::global(int narg, char **arg)
       fnum = input->numeric(FLERR,arg[iarg+1]);
       if (fnum <= 0.0) error->all(FLERR,"Illegal global command");
       iarg += 2;
+    } else if (strcmp(arg[iarg],"optParticleMoves") == 0) {
+      enableOptParticleMoves = true;
+      iarg += 1;
     } else if (strcmp(arg[iarg],"nrho") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal global command");
       nrho = input->numeric(FLERR,arg[iarg+1]);
