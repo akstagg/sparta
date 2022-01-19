@@ -172,6 +172,15 @@ void Update::init()
     else moveptr = &Update::move<2,0>;
   }
 
+  // checks on optimized particle moves
+
+  if (enableOptParticleMoves) {
+    if (domain->axisymmetric)
+      error->all(FLERR,"Optimized particle moves not yet implemented for axisymmetry");
+    if (surf->exist)
+      error->all(FLERR,"Optimized particle moves implemented but not fully tested with surfaces");
+  }
+
   // checks on external field options
 
   if (fstyle == CFIELD) {
@@ -907,6 +916,7 @@ void Update::optSingleStepMove() {
     // reset particle values
     x[0] = xnew[0];
     x[1] = xnew[1];
+    x[2] = 0.;
     if (perturbflag) {
       v[0] = vperturb[0];
       v[1] = vperturb[1];
