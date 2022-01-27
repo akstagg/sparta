@@ -1042,7 +1042,7 @@ template < int DIM, int SURF > void UpdateKokkos::standardMove() {
     Kokkos::deep_copy(d_scalars,h_scalars);
 
     //k_mlist.sync_device();
-    d_particles = particle_kk->k_particles.d_view;  <<<<------ is this needed???????
+    d_particles = particle_kk->k_particles.d_view;
     copymode = 1;
     if (!sparta->kokkos->need_atomics)
       Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagUpdateMove<DIM,SURF,0> >(pstart,pstop),*this);
@@ -1300,7 +1300,7 @@ void UpdateKokkos::operator()(TagUpdateOptSingleStepMove<DIM,ATOMIC_REDUCTION>, 
       indx = d_nmigrate();
       d_nmigrate()++;
     } else {
-      indx = Kokkos::atomic_increment(&d_nmigrate());
+      Kokkos::atomic_increment(&d_nmigrate());
     }
     k_mlist.d_view[indx] = i;
 
@@ -1378,7 +1378,7 @@ void UpdateKokkos::operator()(TagUpdateOptSingleStepMove<3,ATOMIC_REDUCTION>, co
       indx = d_nmigrate();
       d_nmigrate()++;
     } else {
-      indx = Kokkos::atomic_increment(&d_nmigrate());
+      Kokkos::atomic_increment(&d_nmigrate());
     }
     k_mlist.d_view[indx] = i;
 
@@ -2311,7 +2311,7 @@ void UpdateKokkos::operator()(TagUpdateMove<DIM,SURF,ATOMIC_REDUCTION>, const in
       index = d_nmigrate();
       d_nmigrate()++;
     } else {
-      index = Kokkos::atomic_increment(&d_nmigrate());
+      Kokkos::atomic_increment(&d_nmigrate());
     }
     k_mlist.d_view[index] = i;
     if (particle_i.flag != PDISCARD) {

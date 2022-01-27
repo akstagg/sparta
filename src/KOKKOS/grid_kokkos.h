@@ -24,6 +24,13 @@ namespace SPARTA_NS {
 class GridKokkos : public Grid {
  public:
 
+  // hash for all cell IDs (owned,ghost,parent)
+  typedef Kokkos::UnorderedMap<cellint,int> hash_type;
+  typedef hash_type::size_type size_type;    // uint32_t
+  typedef hash_type::key_type key_type;      // cellint
+  typedef hash_type::value_type value_type;  // int
+  hash_type hash_kk;
+
   // make into a view
   //ChildCell *cells;           // list of owned and ghost child cells
 
@@ -87,10 +94,6 @@ class GridKokkos : public Grid {
   int id_find_child(cellint parentID, int plevel,
                     double *oplo, double *ophi, double *x) const
   {
-    typedef hash_type::size_type size_type;    // uint32_t
-    typedef hash_type::key_type key_type;      // cellint
-    typedef hash_type::value_type value_type;  // int
-
     int ix,iy,iz,nx,ny,nz;
     double plo[3],phi[3],clo[3],chi[3];
     cellint childID,ichild;
@@ -165,13 +168,6 @@ class GridKokkos : public Grid {
   void grow_cells(int, int);
   void grow_sinfo(int);
   void grow_pcells();
-
-  // hash for all cell IDs (owned,ghost,parent).  The _d postfix refers to the
-  // fact that this hash lives on "device"
-
-  typedef Kokkos::UnorderedMap<cellint,int> hash_type;
-  hash_type hash_kk;
-
 };
 
 }
