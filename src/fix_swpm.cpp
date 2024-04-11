@@ -23,7 +23,7 @@
 
 using namespace SPARTA_NS;
 
-enum{INT,DOUBLE}; 
+enum{INT,DOUBLE};
 
 /* ---------------------------------------------------------------------- */
 

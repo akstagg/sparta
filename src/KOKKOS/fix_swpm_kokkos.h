@@ -14,32 +14,41 @@
 
 #ifdef FIX_CLASS
 
-FixStyle(swpm,FixSWPM)
+FixStyle(swpm/kk,FixSWPMKokkos)
 
 #else
 
-#ifndef SPARTA_FIX_SWPM_H
-#define SPARTA_FIX_SWPM_H
+#ifndef SPARTA_FIX_SWPM_KOKKOS_H
+#define SPARTA_FIX_SWPM_KOKKOS_H
 
-#include "stdio.h"
-#include "fix.h"
-#include "particle.h"
+#include "fix_swpm.h"
+#include "particle_kokkos.h"
+#include "kokkos_type.h"
 
 namespace SPARTA_NS {
 
-class FixSWPM : public Fix {
- public:
-  FixSWPM(class SPARTA *, int, char **);
-  virtual ~FixSWPM();
-  int setmask();
-  void init();
-  virtual void update_custom(int, double, double, double, double *);
+  class FixSWPMKokkos : public FixSWPM {
+  public:
 
- protected:
-  int index_sweight;
+    FixSWPMKokkos(class SPARTA *, int, char **);
+    ~FixSWPMKokkos();
+    void pre_update_custom_kokkos();
+    void update_custom(int, double, double, double, double *);
+
+
+  private:
+
+    t_particle_1d d_particles; // may not need this
+    t_species_1d d_species; // may not need this
+    DAT::t_float_1d d_sweights;
+
 };
 
 }
 
 #endif
 #endif
+
+/* ERROR/WARNING messages:
+ */
+
