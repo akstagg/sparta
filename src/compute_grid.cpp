@@ -159,6 +159,9 @@ ComputeGrid::ComputeGrid(SPARTA *sparta, int narg, char **arg) :
     iarg++;
   }
 
+  // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
+
   // ntotal = total # of columns in tally array
   // reset_map() adjusts indices in initial map() using final npergroup
   // also adds columns to tally array for CELLCOUNT/CELLMASS
@@ -227,7 +230,6 @@ void ComputeGrid::compute_per_grid()
   double *v,*vec;
 
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0)
     sweights = particle->edvec[particle->ewhich[index_sweight]];
 
