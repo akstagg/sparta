@@ -79,6 +79,9 @@ ComputeThermalGrid::ComputeThermalGrid(SPARTA *sparta, int narg, char **arg) :
     for (int j = 0; j < npergroup; j++)
       map[i][j] = (i/nvalue)*npergroup + j;
 
+  // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
+
   nglocal = 0;
   vector_grid = NULL;
   tally = NULL;
@@ -130,7 +133,6 @@ void ComputeThermalGrid::compute_per_grid()
   double *v,*vec;
 
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0)
     sweights = particle->edvec[particle->ewhich[index_sweight]];
 

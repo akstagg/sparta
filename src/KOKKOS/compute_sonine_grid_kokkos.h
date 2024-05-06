@@ -101,7 +101,11 @@ class ComputeSonineGridKokkos : public ComputeSonineGrid, public KokkosBase {
   DAT::t_int_1d d_moment;
   DAT::t_int_1d d_order;
 
+  DAT::t_int_1d d_ewhich;
+  tdual_struct_tdual_float_1d_1d k_edvec;
+
   int mass,numerator;
+  double fnum;
 };
 
 }

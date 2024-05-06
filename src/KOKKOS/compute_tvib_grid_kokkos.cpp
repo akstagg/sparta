@@ -122,6 +122,7 @@ void ComputeTvibGridKokkos::compute_per_grid_kokkos()
   d_species = particle_kk->k_species.d_view;
   d_ewhich = particle_kk->k_ewhich.d_view;
   k_eiarray = particle_kk->k_eiarray;
+  k_edvec = particle_kk->k_edvec;
 
   GridKokkos* grid_kk = (GridKokkos*) grid;
   d_cellcount = grid_kk->d_cellcount;
@@ -131,6 +132,7 @@ void ComputeTvibGridKokkos::compute_per_grid_kokkos()
 
   d_s2g = particle_kk->k_species2group.view<DeviceType>();
   int nlocal = particle->nlocal;
+  fnum = update->fnum;
 
   // zero all accumulators
 
@@ -186,10 +188,16 @@ void ComputeTvibGridKokkos::operator()(TagComputeTvibGrid_compute_per_grid_atomi
   const int icell = d_particles[i].icell;
   if (!(d_cinfo[icell].mask & groupbit)) return;
 
+  double swfrac = 1.0;
+  if (index_sweight >= 0) {
+    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
+    swfrac = d_sweights[i]/fnum;
+  }
+
   if (modeflag == 0) {
     const int j = d_s2t[ispecies];
-    a_tally(icell,j) += d_particles[i].evib;
-    a_tally(icell,j+1) += 1.0;
+    a_tally(icell,j) += d_particles[i].evib * swfrac;
+    a_tally(icell,j+1) += swfrac;
   } else if (modeflag >= 1) {
     auto &d_vibmode = k_eiarray.d_view[d_ewhich[index_vibmode]].k_view.d_view;
 
@@ -200,8 +208,8 @@ void ComputeTvibGridKokkos::operator()(TagComputeTvibGrid_compute_per_grid_atomi
       const int j = d_s2t_mode(ispecies,imode);
       if (nmode > 1) a_tally(icell,j) += d_vibmode(i,imode);
       else a_tally(icell,j) +=
-             d_particles[i].evib / (boltz*d_species[ispecies].vibtemp[0]);
-      a_tally(icell,j+1) += 1.0;
+             d_particles[i].evib * swfrac / (boltz*d_species[ispecies].vibtemp[0]);
+      a_tally(icell,j+1) += swfrac;
     }
   }
 }
@@ -219,10 +227,16 @@ void ComputeTvibGridKokkos::operator()(TagComputeTvibGrid_compute_per_grid, cons
     const int igroup = d_s2g(imix,ispecies);
     if (igroup < 0) continue;
 
+    double swfrac = 1.0;
+    if (index_sweight >= 0) {
+      auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
+      swfrac = d_sweights[i]/fnum;
+    }
+
     if (modeflag == 0) {
       const int j = d_s2t[ispecies];
-      d_tally(icell,j) += d_particles[i].evib;
-      d_tally(icell,j+1) += 1.0;
+      d_tally(icell,j) += d_particles[i].evib * swfrac;
+      d_tally(icell,j+1) += swfrac;
     } else if (modeflag >= 1) {
       auto &d_vibmode = k_eiarray.d_view[d_ewhich[index_vibmode]].k_view.d_view;
 
@@ -233,8 +247,8 @@ void ComputeTvibGridKokkos::operator()(TagComputeTvibGrid_compute_per_grid, cons
         const int j = d_s2t_mode(ispecies,imode);
         if (nmode > 1) d_tally(icell,j) += d_vibmode(i,imode);
         else d_tally(icell,j) +=
-               d_particles[i].evib / (boltz*d_species[ispecies].vibtemp[0]);
-        d_tally(icell,j+1) += 1.0;
+               d_particles[i].evib * swfrac / (boltz*d_species[ispecies].vibtemp[0]);
+        d_tally(icell,j+1) += swfrac;
       }
     }
   }

@@ -200,6 +200,9 @@ ComputeTvibGrid::ComputeTvibGrid(SPARTA *sparta, int narg, char **arg) :
     }
   }
 
+  // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
+
   nglocal = 0;
   vector_grid = NULL;
   tally = NULL;
@@ -272,7 +275,6 @@ void ComputeTvibGrid::compute_per_grid()
   int i,j,ispecies,igroup,icell,imode,nmode;
 
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0)
     sweights = particle->edvec[particle->ewhich[index_sweight]];
 
