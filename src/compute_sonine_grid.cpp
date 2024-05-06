@@ -116,6 +116,9 @@ ComputeSonineGrid::ComputeSonineGrid(SPARTA *sparta, int narg, char **arg) :
       map[i*noutpergroup+j][1] = i*npergroup;
     }
 
+    // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
+
   nglocal = 0;
   vector_grid = NULL;
   tally = NULL;
@@ -168,7 +171,6 @@ void ComputeSonineGrid::compute_per_grid()
   double vthermal[3];
 
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0)
     sweights = particle->edvec[particle->ewhich[index_sweight]];
 

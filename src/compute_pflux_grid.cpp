@@ -115,6 +115,9 @@ ComputePFluxGrid::ComputePFluxGrid(SPARTA *sparta, int narg, char **arg) :
   size_per_grid_cols = ngroup*nvalue;
   post_process_grid_flag = 1;
 
+  // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
+
   nglocal = 0;
   vector_grid = NULL;
   tally = NULL;
@@ -164,7 +167,6 @@ void ComputePFluxGrid::compute_per_grid()
   double *v,*vec;
 
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0)
     sweights = particle->edvec[particle->ewhich[index_sweight]];
 

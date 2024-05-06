@@ -43,6 +43,7 @@ class ComputeTvibGrid : public Compute {
 
   int ntally;                // total # of columns in tally array
   int nglocal;               // # of owned grid cells
+  int index_sweight;         // stochastic weighted particle index
   double **tally;            // array of tally quantities, ncells by ntally
 
   int *nmap;               // nmap[i] = # of tally values for Ith output column

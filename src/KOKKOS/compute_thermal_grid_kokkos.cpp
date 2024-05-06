@@ -76,6 +76,8 @@ void ComputeThermalGridKokkos::compute_per_grid_kokkos()
   particle_kk->sync(Device,PARTICLE_MASK|SPECIES_MASK);
   d_particles = particle_kk->k_particles.d_view;
   d_species = particle_kk->k_species.d_view;
+  d_ewhich = particle_kk->k_ewhich.d_view;
+  k_edvec = particle_kk->k_edvec;
 
   GridKokkos* grid_kk = (GridKokkos*) grid;
   d_cellcount = grid_kk->d_cellcount;
@@ -85,6 +87,7 @@ void ComputeThermalGridKokkos::compute_per_grid_kokkos()
 
   d_s2g = particle_kk->k_species2group.d_view;
   int nlocal = particle->nlocal;
+  fnum = update->fnum;
 
   // zero all accumulators
 
@@ -139,14 +142,21 @@ void ComputeThermalGridKokkos::operator()(TagComputeThermalGrid_compute_per_grid
   const int icell = d_particles[i].icell;
   if (!(d_cinfo[icell].mask & groupbit)) return;
 
-  const double mass = d_species[ispecies].mass;
+  double mass = d_species[ispecies].mass;
   double *v = d_particles[i].v;
+
+  double swfrac = 1.0;
+  if (index_sweight >= 0) {
+    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
+    swfrac = d_sweights[i]/fnum;
+    mass *= swfrac;
+  }
 
   // 6 tallies per particle: N, Mass, mVx, mVy, mVz, mV^2
 
   int k = igroup*npergroup;
 
-  a_tally(icell,k++) += 1.0;
+  a_tally(icell,k++) += swfrac;
   a_tally(icell,k++) += mass;
   a_tally(icell,k++) += mass*v[0];
   a_tally(icell,k++) += mass*v[1];

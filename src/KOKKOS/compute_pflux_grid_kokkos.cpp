@@ -92,6 +92,8 @@ void ComputePFluxGridKokkos::compute_per_grid_kokkos()
   particle_kk->sync(Device,PARTICLE_MASK|SPECIES_MASK);
   d_particles = particle_kk->k_particles.d_view;
   d_species = particle_kk->k_species.d_view;
+  d_ewhich = particle_kk->k_ewhich.d_view;
+  k_edvec = particle_kk->k_edvec;
 
   GridKokkos* grid_kk = (GridKokkos*) grid;
   d_cellcount = grid_kk->d_cellcount;
@@ -101,6 +103,7 @@ void ComputePFluxGridKokkos::compute_per_grid_kokkos()
 
   d_s2g = particle_kk->k_species2group.d_view;
   int nlocal = particle->nlocal;
+  fnum = update->fnum;
 
   // zero all accumulators
 
@@ -155,7 +158,12 @@ void ComputePFluxGridKokkos::operator()(TagComputePFluxGrid_compute_per_grid_ato
   const int icell = d_particles[i].icell;
   if (!(d_cinfo[icell].mask & groupbit)) return;
 
-  const double mass = d_species[ispecies].mass;
+  double mass = d_species[ispecies].mass;
+  if (index_sweight >= 0) {
+    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
+    double swfrac = d_sweights[i]/fnum;
+    mass *= swfrac;
+  }
   double *v = d_particles[i].v;
 
   // loop has all possible values particle needs to accumulate
@@ -213,7 +221,12 @@ void ComputePFluxGridKokkos::operator()(TagComputePFluxGrid_compute_per_grid, co
     const int igroup = d_s2g(imix,ispecies);
     if (igroup < 0) return;
 
-    const double mass = d_species[ispecies].mass;
+    double mass = d_species[ispecies].mass;
+    if (index_sweight >= 0) {
+      auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
+      double swfrac = d_sweights[i]/fnum;
+      mass *= swfrac;
+    }
     double *v = d_particles[i].v;
 
     int k = igroup*npergroup;

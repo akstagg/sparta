@@ -82,6 +82,9 @@ class ComputePFluxGridKokkos : public ComputePFluxGrid, public KokkosBase {
   DAT::tdual_int_1d k_unique;
   DAT::t_int_1d d_unique;
 
+  DAT::t_int_1d d_ewhich;
+  tdual_struct_tdual_float_1d_1d k_edvec;
+
   int nstride,nsample;
   double fnum;
 
