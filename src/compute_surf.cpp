@@ -119,6 +119,9 @@ ComputeSurf::ComputeSurf(SPARTA *sparta, int narg, char **arg) :
   hash = new MyHash;
 
   dim = domain->dimension;
+
+  // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -301,7 +304,6 @@ void ComputeSurf::surf_tally(int isurf, int icell, int reaction,
   double oswfrac, iswfrac, jswfrac;
   oswfrac = iswfrac = jswfrac = 1.0;
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0) {
     int nout = 0;
     oswfrac = 0.0;

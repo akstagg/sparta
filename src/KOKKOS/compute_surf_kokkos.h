@@ -106,6 +106,26 @@ void surf_tally_kk(int isurf, int icell, int reaction,
 
   double fluxscale = d_normflux(isurf);
 
+  // assume non-reacting and no splitting at boundary
+  double oswfrac, iswfrac, jswfrac;
+  oswfrac = iswfrac = jswfrac = 1.0;
+  if (index_sweight >= 0) {
+    int nout = 0;
+    oswfrac = 0.0;
+    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
+    if(ip) {
+      iswfrac = d_sweights[ip - particle->particles]/fnum;
+      oswfrac += iswfrac;
+      nout++;
+    }
+    if(jp) {
+      jswfrac = d_sweights[jp - particle->particles]/fnum;
+      oswfrac += jswfrac;
+      nout++;
+    }
+    if(nout > 0) oswfrac /= nout;
+  }
+
   // tally all values associated with group into array
   // set nflag and tflag after normal and tangent computation is done once
   // particle weight used for all keywords except NUM
@@ -125,9 +145,9 @@ void surf_tally_kk(int isurf, int icell, int reaction,
 
   double weight = 1.0;
   if (weightflag) weight = iorig->weight;
-  origmass = d_species(origspecies).mass * weight;
-  if (ip) imass = d_species(ip->ispecies).mass * weight;
-  if (jp) jmass = d_species(jp->ispecies).mass * weight;
+  origmass = d_species(origspecies).mass * weight * oswfrac;
+  if (ip) imass = d_species(ip->ispecies).mass * weight * iswfrac;
+  if (jp) jmass = d_species(jp->ispecies).mass * weight * jswfrac;
 
   double *vorig = iorig->v;
 
@@ -148,15 +168,15 @@ void surf_tally_kk(int isurf, int icell, int reaction,
       a_array_surf_tally(itally,k++) += weight;
       break;
     case NFLUX:
-      a_array_surf_tally(itally,k) += weight * fluxscale;
+      a_array_surf_tally(itally,k) += weight * fluxscale * oswfrac;
       if (!transparent) {
-        if (ip) a_array_surf_tally(itally,k) -= weight * fluxscale;
-        if (jp) a_array_surf_tally(itally,k) -= weight * fluxscale;
+        if (ip) a_array_surf_tally(itally,k) -= weight * fluxscale * iswfrac;
+        if (jp) a_array_surf_tally(itally,k) -= weight * fluxscale * jswfrac;
       }
       k++;
       break;
     case NFLUXIN:
-      a_array_surf_tally(itally,k) += weight * fluxscale;
+      a_array_surf_tally(itally,k) += weight * fluxscale * oswfrac;
       k++;
       break;
     case MFLUX:
@@ -279,24 +299,24 @@ void surf_tally_kk(int isurf, int icell, int reaction,
         a_array_surf_tally(itally,k++) -= 0.5*mvv2e * (ivsqpost + jvsqpost - vsqpre) * fluxscale;
       break;
     case EROT:
-      if (ip) ierot = ip->erot;
+      if (ip) ierot = ip->erot * iswfrac;
       else ierot = 0.0;
-      if (jp) jerot = jp->erot;
+      if (jp) jerot = jp->erot * jswfrac;
       else jerot = 0.0;
       if (transparent)
-        a_array_surf_tally(itally,k++) += weight * iorig->erot * fluxscale;
+        a_array_surf_tally(itally,k++) += weight * iorig->erot * fluxscale * oswfrac;
       else
-        a_array_surf_tally(itally,k++) -= weight * (ierot + jerot - iorig->erot) * fluxscale;
+        a_array_surf_tally(itally,k++) -= weight * (ierot + jerot - iorig->erot * oswfrac) * fluxscale;
       break;
     case EVIB:
-      if (ip) ievib = ip->evib;
+      if (ip) ievib = ip->evib * iswfrac;
       else ievib = 0.0;
-      if (jp) jevib = jp->evib;
+      if (jp) jevib = jp->evib * jswfrac;
       else jevib = 0.0;
       if (transparent)
-        a_array_surf_tally(itally,k++) += weight * iorig->evib * fluxscale;
+        a_array_surf_tally(itally,k++) += weight * iorig->evib * fluxscale * oswfrac;
       else
-        a_array_surf_tally(itally,k++) -= weight * (ievib + jevib - iorig->evib) * fluxscale;
+        a_array_surf_tally(itally,k++) -= weight * (ievib + jevib - iorig->evib * oswfrac) * fluxscale;
       break;
     case ECHEM:
       if (reaction && !transparent) {
@@ -310,14 +330,14 @@ void surf_tally_kk(int isurf, int icell, int reaction,
       break;
     case ETOT:
       vsqpre = origmass * MathExtraKokkos::lensq3(vorig);
-      otherpre = iorig->erot + iorig->evib;
+      otherpre = (iorig->erot + iorig->evib) * oswfrac;
       if (ip) {
         ivsqpost = imass * MathExtraKokkos::lensq3(ip->v);
-        iother = ip->erot + ip->evib;
+        iother = (ip->erot + ip->evib) * iswfrac;
       } else ivsqpost = iother = 0.0;
       if (jp) {
         jvsqpost = jmass * MathExtraKokkos::lensq3(jp->v);
-        jother = jp->erot + jp->evib;
+        jother = (jp->erot + jp->evib) * jswfrac;
       } else jvsqpost = jother = 0.0;
       if (transparent)
         etot = -0.5*mvv2e*vsqpre - weight*otherpre;
@@ -341,8 +361,11 @@ void surf_tally_kk(int isurf, int icell, int reaction,
 
  private:
   int mvv2e;
+  double fnum;
 
   DAT::t_int_1d d_which;
+  DAT::t_int_1d d_ewhich;
+  tdual_struct_tdual_float_1d_1d k_edvec;
 
   DAT::tdual_float_2d_lr k_array_surf_tally;
   DAT::t_float_2d_lr d_array_surf_tally;  // tally values for local surfs
