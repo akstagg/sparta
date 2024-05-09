@@ -91,6 +91,7 @@ void ComputeSurfKokkos::init()
   for (int n=0; n<nvalue; n++)
     h_which(n) = which[n];
   Kokkos::deep_copy(d_which,h_which);
+  fnum = update->fnum;
 }
 
 /* ----------------------------------------------------------------------
@@ -146,6 +147,8 @@ void ComputeSurfKokkos::pre_surf_tally()
   particle_kk->sync(Device,SPECIES_MASK);
   d_species = particle_kk->k_species.d_view;
   d_s2g = particle_kk->k_species2group.d_view;
+  d_ewhich = particle_kk->k_ewhich.d_view;
+  k_edvec = particle_kk->k_edvec;
 
   SurfKokkos* surf_kk = (SurfKokkos*) surf;
   surf_kk->sync(Device,ALL_MASK);
