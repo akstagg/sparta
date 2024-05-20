@@ -36,8 +36,11 @@ class ComputeTempKokkos : public ComputeTemp {
   void operator()(const int&, double&) const;
 
  private:
+  double fnum;
   t_particle_1d d_particles;
   t_species_1d d_species;
+  DAT::t_int_1d d_ewhich;
+  tdual_struct_tdual_float_1d_1d k_edvec;
 
   double compute_scalar_kokkos();
 };
