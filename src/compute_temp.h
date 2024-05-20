@@ -30,6 +30,9 @@ class ComputeTemp : public Compute {
   ComputeTemp(class SPARTA *, int, char **);
   ~ComputeTemp() {}
   virtual double compute_scalar();
+
+ protected:
+  int index_sweight;       // stochastic weighted particle index
 };
 
 }

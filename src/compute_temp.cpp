@@ -30,6 +30,9 @@ ComputeTemp::ComputeTemp(SPARTA *sparta, int narg, char **arg) :
   if (narg != 2) error->all(FLERR,"Illegal compute temp command");
 
   scalar_flag = 1;
+
+  // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -46,7 +49,6 @@ double ComputeTemp::compute_scalar()
   double t = 0.0;
 
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0)
     sweights = particle->edvec[particle->ewhich[index_sweight]];
 

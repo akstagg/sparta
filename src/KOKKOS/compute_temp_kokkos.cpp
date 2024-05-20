@@ -53,8 +53,14 @@ KOKKOS_INLINE_FUNCTION
 void ComputeTempKokkos::operator()(const int& i, double& lsum) const {
   double* v = d_particles[i].v;
   const int ispecies = d_particles[i].ispecies;
+
+  double swfrac = 1.0;
+  if (index_sweight >= 0) {
+    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
+    swfrac = d_sweights[i]/fnum;
+  }
   const double mass = d_species[ispecies].mass;
-  lsum += (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]) * mass;
+  lsum += (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]) * mass * swfrac;
 }
 
 double ComputeTempKokkos::compute_scalar_kokkos()
@@ -65,7 +71,10 @@ double ComputeTempKokkos::compute_scalar_kokkos()
   particle_kk->sync(Device, PARTICLE_MASK|SPECIES_MASK);
   d_particles = particle_kk->k_particles.d_view;
   d_species = particle_kk->k_species.d_view;
+  d_ewhich = particle_kk->k_ewhich.d_view;
+  k_edvec = particle_kk->k_edvec;
   int nlocal = particle->nlocal;
+  fnum = update->fnum;
 
   double t = 0.0;
   auto range_policy = Kokkos::RangePolicy<DeviceType>(0, nlocal);
