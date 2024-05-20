@@ -1777,17 +1777,22 @@ void Collide::collisions_one_sw()
 {
   int i,j,n,ip,np,newp;
   int nattempt;
-  double attempt,volume,isw;
+  double attempt,volume;
   Particle::OnePart *ipart,*jpart,*kpart,*lpart,*mpart;
+
+  int ilevel;
+  double np_scale;
 
   // loop over cells I own
 
   Grid::ChildInfo *cinfo = grid->cinfo;
+  Grid::ChildCell *cells = grid->cells;
 
   Particle::OnePart *particles = particle->particles;
   int *next = particle->next;
 
   double *sweights = particle->edvec[particle->ewhich[index_sweight]];
+  double isw, jsw;
 
   for (int icell = 0; icell < nglocal; icell++) {
     np = cinfo[icell].count;
@@ -1804,8 +1809,6 @@ void Collide::collisions_one_sw()
       memory->create(plist,npmax,"collide:plist");
     }
 
-    // get stochastic weights
-
     // build particle list and find maximum particle weight
 
     ip = cinfo[icell].first;
@@ -1814,16 +1817,18 @@ void Collide::collisions_one_sw()
     while (ip >= 0) {
       plist[n++] = ip;
       ipart = &particles[ip];
-      //gi = ipart->sweight;
       isw = sweights[ip];
       sweight_max = MAX(sweight_max,isw);
 
       if (isw != isw) error->all(FLERR,"Particle has NaN weight");
-      if (isw < 0) error->all(FLERR,"Paritlce has negative weight");
+      if (isw < 0) error->all(FLERR,"Particle has negative weight");
       ip = next[ip];
     }
 
-    if (np >= Ncmin) pre_wtf = 0.0;
+    ilevel = cells[icell].level;
+    np_scale = pow(8,ilevel-1);
+
+    if (np >= Ncmin/np_scale) pre_wtf = 0.0;
     else pre_wtf = 1.0;
 
     // attempt = exact collision attempt count for all particles in cell
@@ -1847,32 +1852,35 @@ void Collide::collisions_one_sw()
 
       if (!test_collision(icell,0,0,ipart,jpart)) continue;
 
+      // check if pair has zero or negative weight
+
+      if(sweights[i] <= 0.0 || sweights[j] <= 0.0)
+        error->one(FLERR,"Bad weight before split");
+
       // split particles
 
-      newp = split(ipart,jpart,kpart,lpart);
+      newp = split(ipart,jpart,kpart,lpart,i,j);
 
       // add new particles to particle list
 
       if (newp > 1) {
+        particles = particle->particles;
+        sweights = particle->edvec[particle->ewhich[index_sweight]];
         if (np+2 >= npmax) {
           npmax += DELTAPART;
           memory->grow(plist,npmax,"collide:plist");
         }
         plist[np++] = particle->nlocal-2;
         plist[np++] = particle->nlocal-1;
-        particles = particle->particles;
       } else if (newp > 0) {
+        particles = particle->particles;
+        sweights = particle->edvec[particle->ewhich[index_sweight]];
         if (np+1 >= npmax) {
           npmax += DELTAPART;
           memory->grow(plist,npmax,"collide:plist");
         }
         plist[np++] = particle->nlocal-1;
-        particles = particle->particles;
       }
-
-      // reacquire the custom particle weights vector
-
-      sweights = particle->edvec[particle->ewhich[index_sweight]];;
 
       // since ipart and jpart have same weight, do not need
       // ... to account for weight during collision itself
@@ -1896,7 +1904,7 @@ void Collide::collisions_one_sw()
 ------------------------------------------------------------------------- */
 
 int Collide::split(Particle::OnePart *&ip, Particle::OnePart *&jp,
-                   Particle::OnePart *&kp, Particle::OnePart *&lp)
+                   Particle::OnePart *&kp, Particle::OnePart *&lp, int i, int j)
 {
   double xk[3],vk[3];
   double xl[3],vl[3];
@@ -1917,8 +1925,8 @@ int Collide::split(Particle::OnePart *&ip, Particle::OnePart *&jp,
   // ... MIN(ip->sweight,jp->sweight)/(1 + pre_wtf * wtf)
 
   double *sweights = particle->edvec[particle->ewhich[index_sweight]];
-  double isw = sweights[ip-particle->particles];
-  double jsw = sweights[jp-particle->particles];
+  double isw = sweights[i];
+  double jsw = sweights[j];
   double Gwtf, ksw, lsw;
 
   // particle ip has larger weight
@@ -1964,6 +1972,12 @@ int Collide::split(Particle::OnePart *&ip, Particle::OnePart *&jp,
     erotl = ip->erot;
   }
 
+  // Gwtf should never be negative or zero
+
+  if(Gwtf <= 0.0)
+    error->one(FLERR,"Negative weight assigned after split");
+
+
   // number of new particles
 
   int newp = 0;
@@ -1974,11 +1988,13 @@ int Collide::split(Particle::OnePart *&ip, Particle::OnePart *&jp,
     id = MAXSMALLINT*random->uniform();
     reallocflag = particle->add_particle(id,ks,kcell,xk,vk,erotk,0.0);
     if (reallocflag) {
+      particles = particle->particles;
+      sweights = particle->edvec[particle->ewhich[index_sweight]];
       ip = particle->particles + (ip - particles);
       jp = particle->particles + (jp - particles);
     }
     kp = &particle->particles[particle->nlocal-1];
-    sweights[kp - particle->particles] = ksw;
+    sweights[particle->nlocal-1] = ksw;
     newp++;
   }
 
@@ -1990,18 +2006,15 @@ int Collide::split(Particle::OnePart *&ip, Particle::OnePart *&jp,
     id = MAXSMALLINT*random->uniform();
     reallocflag = particle->add_particle(id,ls,lcell,xl,vl,erotl,0.0);
     if (reallocflag) {
+      particles = particle->particles;
+      sweights = particle->edvec[particle->ewhich[index_sweight]];
       ip = particle->particles + (ip - particles);
       jp = particle->particles + (jp - particles);
       kp = particle->particles + (kp - particles);
     }
-    lp = &particle->particles[particle->nlocal-1];
-    sweights[lp - particle->particles] = lsw;
+    sweights[particle->nlocal-1] = lsw;
     newp++;
   }
-
-  // Gwtf should never be negative or zero
-
-  if(Gwtf <= 0.0) error->one(FLERR,"Negative weight assigned after split");
 
   // update weights
 
@@ -2023,14 +2036,21 @@ void Collide::group_reduce()
 
   Particle::OnePart *ipart;
   Grid::ChildInfo *cinfo = grid->cinfo;
+  Grid::ChildCell *cells = grid->cells;
   Particle::OnePart *particles = particle->particles;
   int *next = particle->next;
+  int ilevel, nthresh;
+  double np_scale;
 
   double *sweights = particle->edvec[particle->ewhich[index_sweight]];
 
   for (int icell = 0; icell < nglocal; icell++) {
     np = cinfo[icell].count;
-    if (np <= Ncmax) continue;
+    ilevel = cells[icell].level;
+    np_scale = pow(8,ilevel-1);
+    nthresh = MAX(Ncmax/np_scale, Ngmax);
+    
+    if (np <= nthresh) continue;
 
     // create particle list
 
@@ -2045,7 +2065,7 @@ void Collide::group_reduce()
 
     gbuf = 0;
 
-    while (n >= Ncmax) {
+    while (n > nthresh) {
       nold = n;
       if (group_type == BINARY) {
 
@@ -2087,7 +2107,7 @@ void Collide::group_reduce()
 
         // weight limits to separate particles
 
-        double lLim = MAX(swmean-swstd,0);
+        double lLim = MAX(swmean-1.25*swstd,0);
         double uLim = swmean+2.0*swstd;
 
         // recreate particle list and omit large weighted particles
