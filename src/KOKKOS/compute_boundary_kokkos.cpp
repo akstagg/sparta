@@ -75,6 +75,7 @@ void ComputeBoundaryKokkos::init()
   for (int n=0; n<nvalue; n++)
     h_which(n) = which[n];
   Kokkos::deep_copy(d_which,h_which);
+  fnum = update->fnum;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -124,6 +125,8 @@ void ComputeBoundaryKokkos::pre_boundary_tally()
 
   ParticleKokkos* particle_kk = (ParticleKokkos*) particle;
   particle_kk->sync(Device,PARTICLE_MASK|SPECIES_MASK);
+  d_ewhich = particle_kk->k_ewhich.d_view;
+  k_edvec = particle_kk->k_edvec;
   d_species = particle_kk->k_species.d_view;
   d_s2g = particle_kk->k_species2group.d_view;
 

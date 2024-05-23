@@ -76,6 +76,9 @@ ComputeBoundary::ComputeBoundary(SPARTA *sparta, int narg, char **arg) :
 
   memory->create(array,size_array_rows,size_array_cols,"boundary:array");
   memory->create(myarray,size_array_rows,size_array_cols,"boundary:array");
+
+  // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -187,7 +190,6 @@ void ComputeBoundary::boundary_tally(int iface, int istyle, int reaction,
   double oswfrac, iswfrac, jswfrac;
   oswfrac = iswfrac = jswfrac = 1.0;
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0) {
     int nout = 0;
     oswfrac = 0.0;
@@ -386,6 +388,8 @@ void ComputeBoundary::boundary_tally(int iface, int istyle, int reaction,
       case ETOT:
         vsqpre = origmass * MathExtra::lensq3(vorig);
         otherpre = (iorig->erot + iorig->evib) * oswfrac;
+        //        AKS bug printf("POSSIBLE BUG: compare ivsqpost to jvsqpost below in compute_boundary.cpp\n");
+        //        AKS bug printf("    also check in compute_boundary_kokkos.h\n");
         if (ip) {
           ivsqpost = imass * MathExtra::lensq3(ip->v);
           iother = (ip->erot + ip->evib) * iswfrac;
