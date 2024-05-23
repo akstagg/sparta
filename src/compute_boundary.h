@@ -40,6 +40,7 @@ class ComputeBoundary : public Compute {
  protected:
   int imix,nvalue,ngroup,ntotal,nrow;
   int *which;
+  int index_sweight;             // stochastic weighted particle index
 
   int weightflag;                // 1 if cell weighting is enabled
   double weight;                 // particle weight, based on initial cell

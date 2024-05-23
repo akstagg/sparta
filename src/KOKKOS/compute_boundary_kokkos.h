@@ -78,11 +78,30 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
   double ierot,jerot,ievib,jevib,iother,jother,otherpre;
   double vnorm[3],vtang[3],pdelta[3],pnorm[3],ptang[3];
 
+  double oswfrac, iswfrac, jswfrac;
+  oswfrac = iswfrac = jswfrac = 1.0;
+  if (index_sweight >= 0) {
+    int nout = 0;
+    oswfrac = 0.0;
+    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
+    if(ip) {
+      iswfrac = d_sweights[ip - particle->particles]/fnum;
+      oswfrac += iswfrac;
+      nout++;
+    }
+    if(jp) {
+      jswfrac = d_sweights[jp - particle->particles]/fnum;
+      oswfrac += jswfrac;
+      nout++;
+    }
+    if(nout > 0) oswfrac /= nout;
+  }
+
   double origmass,imass,jmass,pre;
   double weight = weightflag ? iorig->weight : 1.0;
-  origmass = d_species[origspecies].mass * weight;
-  if (ip) imass = d_species[ip->ispecies].mass * weight;
-  if (jp) jmass = d_species[jp->ispecies].mass * weight;
+  origmass = d_species[origspecies].mass * weight * oswfrac;
+  if (ip) imass = d_species[ip->ispecies].mass * weight * iswfrac;
+  if (jp) jmass = d_species[jp->ispecies].mass * weight * jswfrac;
 
   double *vorig = iorig->v;
 
@@ -107,7 +126,7 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
         a_myarray(iface,k++) += weight;
         break;
       case NFLUX:
-        a_myarray(iface,k++) += weight;
+        a_myarray(iface,k++) += weight*oswfrac;
         break;
       case MFLUX:
         a_myarray(iface,k++) += origmass;
@@ -148,10 +167,10 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
         a_myarray(iface,k++) += 0.5 * mvv2e * origmass * vsqpre;
         break;
       case EROT:
-        a_myarray(iface,k++) += weight * iorig->erot;
+        a_myarray(iface,k++) += weight * iorig->erot * oswfrac;
         break;
       case EVIB:
-        a_myarray(iface,k++) += weight * iorig->evib;
+        a_myarray(iface,k++) += weight * iorig->evib * oswfrac;
         break;
       case ETOT:
         vsqpre = MathExtraKokkos::lensq3(vorig);
@@ -171,9 +190,9 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
         a_myarray(iface,k++) += weight;
         break;
       case NFLUX:
-        a_myarray(iface,k) += weight;
-        if (ip) a_myarray(iface,k) -= weight;
-        if (jp) a_myarray(iface,k) -= weight;
+        a_myarray(iface,k) += weight * oswfrac;
+        if (ip) a_myarray(iface,k) -= weight * iswfrac;
+        if (jp) a_myarray(iface,k) -= weight * jswfrac;
         k++;
         break;
       case MFLUX:
@@ -230,29 +249,29 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
         a_myarray(iface,k++) -= 0.5*mvv2e * (ivsqpost + jvsqpost - vsqpre);
         break;
       case EROT:
-        if (ip) ierot = ip->erot;
+        if (ip) ierot = ip->erot * iswfrac;
         else ierot = 0.0;
-        if (jp) jerot = jp->erot;
+        if (jp) jerot = jp->erot * jswfrac;
         else jerot = 0.0;
-        a_myarray(iface,k++) -= weight * (ierot + jerot - iorig->erot);
+        a_myarray(iface,k++) -= weight * (ierot + jerot - iorig->erot * oswfrac);
         break;
       case EVIB:
-        if (ip) ievib = ip->evib;
+        if (ip) ievib = ip->evib * iswfrac;
         else ievib = 0.0;
-        if (jp) jevib = jp->evib;
+        if (jp) jevib = jp->evib * jswfrac;
         else jevib = 0.0;
-        a_myarray(iface,k++) -= weight * (ievib + jevib - iorig->evib);
+        a_myarray(iface,k++) -= weight * (ievib + jevib - iorig->evib * oswfrac);
         break;
       case ETOT:
         vsqpre = origmass * MathExtraKokkos::lensq3(vorig);
-        otherpre = iorig->erot + iorig->evib;
+        otherpre = (iorig->erot + iorig->evib) * oswfrac;
         if (ip) {
           ivsqpost = imass * MathExtraKokkos::lensq3(ip->v);
-          iother = ip->erot + ip->evib;
+          iother = (ip->erot + ip->evib) * iswfrac;
         } else ivsqpost = iother = 0.0;
         if (jp) {
-          jvsqpost = jmass * MathExtraKokkos::lensq3(jp->v);
-          jother = jp->erot + jp->evib;
+          jvsqpost = jmass * MathExtraKokkos::lensq3(jp->v) * jswfrac;
+          jother = (jp->erot + jp->evib) * jswfrac;
         } else jvsqpost = jother = 0.0;
         a_myarray(iface,k++) -= 0.5*mvv2e*(ivsqpost + jvsqpost - vsqpre) +
           weight * (iother + jother - otherpre);
@@ -265,7 +284,10 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
 
  private:
   int mvv2e;
+  double fnum;
   DAT::t_int_1d d_which;
+  DAT::t_int_1d d_ewhich;
+  tdual_struct_tdual_float_1d_1d k_edvec;
 
   DAT::tdual_float_2d_lr k_myarray; // local accumulator array
   DAT::t_float_2d_lr d_myarray;
