@@ -30,11 +30,11 @@ enum{V2,VX3,VY3,VZ3,V4};
 
 // internal accumulators
 
-enum{MASSSUM,mV2,mV4,mV3x,mV3y,mV3z,LASTSIZE};
+enum{MASSSUM,MV2,MV4,MV3X,MV3Y,MV3Z,LASTSIZE};
 
 // max # of quantities to accumulate for any user value
 
-#define MAXACCUMULATE 12
+#define MAXACCUMULATE 2
 
 /* ---------------------------------------------------------------------- */
 
@@ -68,23 +68,23 @@ ComputeVmomGrid::ComputeVmomGrid(SPARTA *sparta, int narg, char **arg) :
     if (strcmp(arg[iarg],"v2") == 0) {
       value[ivalue] = V2;
       set_map(ivalue,MASSSUM);
-      set_map(ivalue,mV2);
+      set_map(ivalue,MV2);
     } else if (strcmp(arg[iarg],"v4") == 0) {
       value[ivalue] = V4;
       set_map(ivalue,MASSSUM);
-      set_map(ivalue,mV4);
+      set_map(ivalue,MV4);
     } else if (strcmp(arg[iarg],"vx3") == 0) {
       value[ivalue] = VX3;
       set_map(ivalue,MASSSUM);
-      set_map(ivalue,mV3x);
+      set_map(ivalue,MV3X);
     } else if (strcmp(arg[iarg],"vy3") == 0) {
       value[ivalue] = VY3;
       set_map(ivalue,MASSSUM);
-      set_map(ivalue,mV3y);
+      set_map(ivalue,MV3Y);
     } else if (strcmp(arg[iarg],"vz3") == 0) {
       value[ivalue] = VZ3;
       set_map(ivalue,MASSSUM);
-      set_map(ivalue,mV3z);
+      set_map(ivalue,MV3Z);
     } else error->all(FLERR,"Illegal compute vmom/grid command");
 
     ivalue++;
@@ -101,6 +101,9 @@ ComputeVmomGrid::ComputeVmomGrid(SPARTA *sparta, int narg, char **arg) :
   per_grid_flag = 1;
   size_per_grid_cols = ngroup*nvalue;
   post_process_grid_flag = 1;
+
+  // stochastic weighted particle index
+  index_sweight = particle->find_custom((char *) "sweight");
 
   nglocal = 0;
   vector_grid = NULL;
@@ -151,7 +154,6 @@ void ComputeVmomGrid::compute_per_grid()
   double *v,*vec;
 
   double *sweights;
-  int index_sweight = particle->find_custom((char *) "sweight");
   if(index_sweight >= 0)
     sweights = particle->edvec[particle->ewhich[index_sweight]];
 
@@ -190,19 +192,19 @@ void ComputeVmomGrid::compute_per_grid()
       case MASSSUM:
         vec[k++] += mass;
         break;
-      case mV2:
+      case MV2:
         vec[k++] += mass*vsq;
         break;
-      case mV3x:
+      case MV3X:
         vec[k++] += mass*vsq*v[0];
         break;
-      case mV3y:
+      case MV3Y:
         vec[k++] += mass*vsq*v[1];
         break;
-      case mV3z:
+      case MV3Z:
         vec[k++] += mass*vsq*v[2];
         break;
-      case mV4:
+      case MV4:
         vec[k++] += mass*v[0]*v[0]*v[0]*v[0];
         break;
       }
@@ -253,6 +255,9 @@ void ComputeVmomGrid::post_process_grid(int index, int nsample,
   int hi = nglocal;
   int k = 0;
 
+  double summass;
+  double *t;
+
   if (!etally) {
     nsample = 1;
     etally = tally;
@@ -270,10 +275,15 @@ void ComputeVmomGrid::post_process_grid(int index, int nsample,
   case VZ3:
   case V4:
     {
-      int summass = emap[0];
+      int mass = emap[0];
       int mvn = emap[1];
       for (int icell = lo; icell < hi; icell++) {
-        vec[k] = etally[icell][mvn] / etally[icell][summass];
+        t = etally[icell];
+        summass = t[mass];
+        if (summass == 0.0)
+          vec[k] = 0.0;
+        else
+          vec[k] = t[mvn] / summass;
         k += nstride;
       }
       break;
