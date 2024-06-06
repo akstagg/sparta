@@ -30,9 +30,9 @@ enum{HEATX,HEATY,HEATZ};
 
 // internal accumulators
 
-enum{MASSSUM,mVx,mVy,mVz,mVxVx,mVyVy,mVzVz,mVxVy,mVyVz,mVxVz,
-     mVxVxVx,mVyVyVy,mVzVzVz,
-     mVxVyVy,mVxVzVz,mVyVxVx,mVyVzVz,mVzVxVx,mVzVyVy,LASTSIZE};
+enum{MASSSUM,MVX,MVY,MVZ,MVXVX,MVYVY,MVZVZ,MVXVY,MVYVZ,MVXVZ,
+     MVXVXVX,MVYVYVY,MVZVZVZ,
+     MVXVYVY,MVXVZVZ,MVYVXVX,MVYVZVZ,MVZVXVX,MVZVYVY,LASTSIZE};
 
 // max # of quantities to accumulate for any user value
 
@@ -70,45 +70,45 @@ ComputeEFluxGrid::ComputeEFluxGrid(SPARTA *sparta, int narg, char **arg) :
     if (strcmp(arg[iarg],"heatx") == 0) {
       value[ivalue] = HEATX;
       set_map(ivalue,MASSSUM);
-      set_map(ivalue,mVx);
-      set_map(ivalue,mVy);
-      set_map(ivalue,mVz);
-      set_map(ivalue,mVxVx);
-      set_map(ivalue,mVyVy);
-      set_map(ivalue,mVzVz);
-      set_map(ivalue,mVxVy);
-      set_map(ivalue,mVxVz);
-      set_map(ivalue,mVxVxVx);
-      set_map(ivalue,mVxVyVy);
-      set_map(ivalue,mVxVzVz);
+      set_map(ivalue,MVX);
+      set_map(ivalue,MVY);
+      set_map(ivalue,MVZ);
+      set_map(ivalue,MVXVX);
+      set_map(ivalue,MVYVY);
+      set_map(ivalue,MVZVZ);
+      set_map(ivalue,MVXVY);
+      set_map(ivalue,MVXVZ);
+      set_map(ivalue,MVXVXVX);
+      set_map(ivalue,MVXVYVY);
+      set_map(ivalue,MVXVZVZ);
     } else if (strcmp(arg[iarg],"heaty") == 0) {
       value[ivalue] = HEATX;
       set_map(ivalue,MASSSUM);
-      set_map(ivalue,mVy);
-      set_map(ivalue,mVx);
-      set_map(ivalue,mVz);
-      set_map(ivalue,mVyVy);
-      set_map(ivalue,mVxVx);
-      set_map(ivalue,mVzVz);
-      set_map(ivalue,mVxVy);
-      set_map(ivalue,mVyVz);
-      set_map(ivalue,mVyVyVy);
-      set_map(ivalue,mVyVxVx);
-      set_map(ivalue,mVyVzVz);
+      set_map(ivalue,MVY);
+      set_map(ivalue,MVX);
+      set_map(ivalue,MVZ);
+      set_map(ivalue,MVYVY);
+      set_map(ivalue,MVXVX);
+      set_map(ivalue,MVZVZ);
+      set_map(ivalue,MVXVY);
+      set_map(ivalue,MVYVZ);
+      set_map(ivalue,MVYVYVY);
+      set_map(ivalue,MVYVXVX);
+      set_map(ivalue,MVYVZVZ);
     } else if (strcmp(arg[iarg],"heatz") == 0) {
       value[ivalue] = HEATX;
       set_map(ivalue,MASSSUM);
-      set_map(ivalue,mVz);
-      set_map(ivalue,mVx);
-      set_map(ivalue,mVy);
-      set_map(ivalue,mVzVz);
-      set_map(ivalue,mVxVx);
-      set_map(ivalue,mVyVy);
-      set_map(ivalue,mVxVz);
-      set_map(ivalue,mVyVz);
-      set_map(ivalue,mVzVzVz);
-      set_map(ivalue,mVzVxVx);
-      set_map(ivalue,mVzVyVy);
+      set_map(ivalue,MVZ);
+      set_map(ivalue,MVX);
+      set_map(ivalue,MVY);
+      set_map(ivalue,MVZVZ);
+      set_map(ivalue,MVXVX);
+      set_map(ivalue,MVYVY);
+      set_map(ivalue,MVXVZ);
+      set_map(ivalue,MVYVZ);
+      set_map(ivalue,MVZVZVZ);
+      set_map(ivalue,MVZVXVX);
+      set_map(ivalue,MVZVYVY);
     } else error->all(FLERR,"Illegal compute eflux/grid command");
 
     ivalue++;
@@ -215,58 +215,58 @@ void ComputeEFluxGrid::compute_per_grid()
       case MASSSUM:
         vec[k++] += mass;
         break;
-      case mVx:
+      case MVX:
         vec[k++] += mass*v[0];
         break;
-      case mVy:
+      case MVY:
         vec[k++] += mass*v[1];
         break;
-      case mVz:
+      case MVZ:
         vec[k++] += mass*v[2];
         break;
-      case mVxVx:
+      case MVXVX:
         vec[k++] += mass*v[0]*v[0];
         break;
-      case mVyVy:
+      case MVYVY:
         vec[k++] += mass*v[1]*v[1];
         break;
-      case mVzVz:
+      case MVZVZ:
         vec[k++] += mass*v[2]*v[2];
         break;
-      case mVxVy:
+      case MVXVY:
         vec[k++] += mass*v[0]*v[1];
         break;
-      case mVyVz:
+      case MVYVZ:
         vec[k++] += mass*v[1]*v[2];
         break;
-      case mVxVz:
+      case MVXVZ:
         vec[k++] += mass*v[0]*v[2];
         break;
-      case mVxVxVx:
+      case MVXVXVX:
         vec[k++] += mass*v[0]*v[0]*v[0];
         break;
-      case mVyVyVy:
+      case MVYVYVY:
         vec[k++] += mass*v[1]*v[1]*v[1];
         break;
-      case mVzVzVz:
+      case MVZVZVZ:
         vec[k++] += mass*v[2]*v[2]*v[2];
         break;
-      case mVxVyVy:
+      case MVXVYVY:
         vec[k++] += mass*v[0]*v[1]*v[1];
         break;
-      case mVxVzVz:
+      case MVXVZVZ:
         vec[k++] += mass*v[0]*v[2]*v[2];
         break;
-      case mVyVxVx:
+      case MVYVXVX:
         vec[k++] += mass*v[1]*v[0]*v[0];
         break;
-      case mVyVzVz:
+      case MVYVZVZ:
         vec[k++] += mass*v[1]*v[2]*v[2];
         break;
-      case mVzVxVx:
+      case MVZVXVX:
         vec[k++] += mass*v[2]*v[0]*v[0];
         break;
-      case mVzVyVy:
+      case MVZVYVY:
         vec[k++] += mass*v[2]*v[1]*v[1];
         break;
       }
