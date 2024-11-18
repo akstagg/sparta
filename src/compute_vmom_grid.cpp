@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -102,9 +102,6 @@ ComputeVmomGrid::ComputeVmomGrid(SPARTA *sparta, int narg, char **arg) :
   size_per_grid_cols = ngroup*nvalue;
   post_process_grid_flag = 1;
 
-  // stochastic weighted particle index
-  index_sweight = particle->find_custom((char *) "sweight");
-
   nglocal = 0;
   vector_grid = NULL;
   tally = NULL;
@@ -153,10 +150,6 @@ void ComputeVmomGrid::compute_per_grid()
   double mass, vsq;
   double *v,*vec;
 
-  double *sweights;
-  if(index_sweight >= 0)
-    sweights = particle->edvec[particle->ewhich[index_sweight]];
-
   // zero all accumulators - could do this with memset()
 
   for (i = 0; i < nglocal; i++)
@@ -176,7 +169,7 @@ void ComputeVmomGrid::compute_per_grid()
 
     mass = species[ispecies].mass;
     v = particles[i].v;
-    if(index_sweight >= 0) mass *= sweights[i]/update->fnum;
+    if (particle->weightflag) mass *= particles[i].weight;
 
     vec = tally[icell];
 

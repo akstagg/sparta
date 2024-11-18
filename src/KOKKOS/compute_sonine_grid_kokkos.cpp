@@ -98,8 +98,6 @@ void ComputeSonineGridKokkos::compute_per_grid_kokkos()
   particle_kk->sync(Device,PARTICLE_MASK|SPECIES_MASK);
   d_particles = particle_kk->k_particles.d_view;
   d_species = particle_kk->k_species.d_view;
-  d_ewhich = particle_kk->k_ewhich.d_view;
-  k_edvec = particle_kk->k_edvec;
 
   GridKokkos* grid_kk = (GridKokkos*) grid;
   d_cellcount = grid_kk->d_cellcount;
@@ -109,6 +107,7 @@ void ComputeSonineGridKokkos::compute_per_grid_kokkos()
   d_s2g = particle_kk->k_species2group.d_view;
   int nlocal = particle->nlocal;
   fnum = update->fnum;
+  particle_weightflag = particle_kk->weightflag;
 
   // zero all accumulators
   Kokkos::deep_copy(d_tally,0.0);
@@ -181,11 +180,7 @@ void ComputeSonineGridKokkos::operator()(TagComputeSonineGrid_compute_vcom_init_
   if (!(d_cinfo[icell].mask & groupbit)) return;
 
   double mass = d_species[ispecies].mass;
-  if (index_sweight >= 0) {
-    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
-    double swfrac = d_sweights[i]/fnum;
-    mass *= swfrac;
-  }
+  if (particle_weightflag) mass *= d_particles[i].weight;
   double *v = d_particles[i].v;
 
   a_vcom_tally(icell,igroup,0) += mass * v[0];
@@ -211,11 +206,7 @@ void ComputeSonineGridKokkos::operator()(TagComputeSonineGrid_compute_vcom, cons
     if (!(d_cinfo[icell].mask & groupbit)) continue;
 
     double mass = d_species[ispecies].mass;
-    if (index_sweight >= 0) {
-      auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
-      double swfrac = d_sweights[i]/fnum;
-      mass *= swfrac;
-    }
+    if (particle_weightflag) mass *= d_particles[i].weight;
     double *v = d_particles[i].v;
 
     d_vcom(icell,igroup,0) += mass * v[0];
@@ -271,11 +262,7 @@ void ComputeSonineGridKokkos::operator()(TagComputeSonineGrid_compute_per_grid_a
   int k = igroup*npergroup;
 
   double mass = d_species[ispecies].mass;
-  if (index_sweight >= 0) {
-    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
-    double swfrac = d_sweights[i]/fnum;
-    mass *= swfrac;
-  }
+  if (particle_weightflag) mass *= d_particles[i].weight;
   double *v = d_particles[i].v;
   a_tally(icell,k++) += mass;
 
@@ -323,11 +310,7 @@ void ComputeSonineGridKokkos::operator()(TagComputeSonineGrid_compute_per_grid, 
     if (!(d_cinfo[icell].mask & groupbit)) continue;
 
     double mass = d_species[ispecies].mass;
-    if (index_sweight >= 0) {
-      auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
-      double swfrac = d_sweights[i]/fnum;
-      mass *= swfrac;
-    }
+    if (particle_weightflag) mass *= d_particles[i].weight;
     double *v = d_particles[i].v;
 
     int k = igroup*npergroup;

@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -61,6 +61,7 @@ class ComputeVmomGridKokkos : public ComputeVmomGrid, public KokkosBase {
   DAT::tdual_float_2d_lr k_tally;
   DAT::t_float_2d_lr d_tally;
   int need_dup;
+  int particle_weightflag;
   Kokkos::Experimental::ScatterView<F_FLOAT**, typename DAT::t_float_2d_lr::array_layout,DeviceType,typename Kokkos::Experimental::ScatterSum,typename Kokkos::Experimental::ScatterDuplicated> dup_tally;
   Kokkos::Experimental::ScatterView<F_FLOAT**, typename DAT::t_float_2d_lr::array_layout,DeviceType,typename Kokkos::Experimental::ScatterSum,typename Kokkos::Experimental::ScatterNonDuplicated> ndup_tally;
 
@@ -77,9 +78,6 @@ class ComputeVmomGridKokkos : public ComputeVmomGrid, public KokkosBase {
 
   DAT::tdual_int_1d k_unique;
   DAT::t_int_1d d_unique;
-
-  DAT::t_int_1d d_ewhich;
-  tdual_struct_tdual_float_1d_1d k_edvec;
 
   int nstride,nsample;
   double fnum;

@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -50,7 +50,6 @@ class ComputeSonineGrid : public Compute {
   int npergroup;             // # of unique tally quantities per group
   int ntotal;                // total # of columns in tally array
   int nglocal;               // # of owned grid cells
-  int index_sweight;         // stochastic weighted particle index
 
   int nmap;                  // # of tally quantities every output value uses
   int **map;                 // which tally columns each output value uses

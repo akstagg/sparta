@@ -60,9 +60,8 @@ class ComputeThermalGridKokkos : public ComputeThermalGrid, public KokkosBase {
  private:
   DAT::tdual_float_2d_lr k_tally;
   DAT::t_float_2d_lr d_tally;
-  DAT::t_int_1d d_ewhich;
-  tdual_struct_tdual_float_1d_1d k_edvec;
   int need_dup;
+  int particle_weightflag;
   Kokkos::Experimental::ScatterView<F_FLOAT**, typename DAT::t_float_2d_lr::array_layout,DeviceType,typename Kokkos::Experimental::ScatterSum,typename Kokkos::Experimental::ScatterDuplicated> dup_tally;
   Kokkos::Experimental::ScatterView<F_FLOAT**, typename DAT::t_float_2d_lr::array_layout,DeviceType,typename Kokkos::Experimental::ScatterSum,typename Kokkos::Experimental::ScatterNonDuplicated> ndup_tally;
 

@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -105,6 +105,7 @@ class ComputeSonineGridKokkos : public ComputeSonineGrid, public KokkosBase {
   tdual_struct_tdual_float_1d_1d k_edvec;
 
   int mass,numerator;
+  int particle_weightflag;
   double fnum;
 };
 

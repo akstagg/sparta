@@ -130,6 +130,7 @@ class ParticleKokkos : public Particle {
   tdual_struct_tdual_float_2d_1d k_edarray;
 
   int sorted_kk;
+  int weightflag_kk;
 
   inline
   int get_maxcellcount() {

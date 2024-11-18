@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -79,9 +79,6 @@ ComputeThermalGrid::ComputeThermalGrid(SPARTA *sparta, int narg, char **arg) :
     for (int j = 0; j < npergroup; j++)
       map[i][j] = (i/nvalue)*npergroup + j;
 
-  // stochastic weighted particle index
-  index_sweight = particle->find_custom((char *) "sweight");
-
   nglocal = 0;
   vector_grid = NULL;
   tally = NULL;
@@ -132,10 +129,6 @@ void ComputeThermalGrid::compute_per_grid()
   double mass;
   double *v,*vec;
 
-  double *sweights;
-  if(index_sweight >= 0)
-    sweights = particle->edvec[particle->ewhich[index_sweight]];
-
   // zero all accumulators - could do this with memset()
 
   for (i = 0; i < nglocal; i++)
@@ -153,8 +146,10 @@ void ComputeThermalGrid::compute_per_grid()
     if (!(cinfo[icell].mask & groupbit)) continue;
 
     mass = species[ispecies].mass;
-    if(index_sweight >= 0) swfrac = sweights[i]/update->fnum;
-    mass *= swfrac;
+    if(particle->weightflag) {
+      swfrac = particles[i].weight;
+      mass *= swfrac;
+    }
     v = particles[i].v;
 
     // 6 tallies per particle: N, Mass, mVx, mVy, mVz, mV^2

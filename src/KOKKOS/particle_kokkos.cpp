@@ -53,6 +53,7 @@ ParticleKokkos::ParticleKokkos(SPARTA *sparta) : Particle(sparta)
   h_reorder_pass = k_reorder_pass.h_view;
 
   sorted_kk = 0;
+  weightflag_kk = 0;
   maxcellcount = 1;
 
   k_eivec = tdual_struct_tdual_int_1d_1d("particle:eivec",0);

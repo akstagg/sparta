@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -116,9 +116,6 @@ ComputeSonineGrid::ComputeSonineGrid(SPARTA *sparta, int narg, char **arg) :
       map[i*noutpergroup+j][1] = i*npergroup;
     }
 
-    // stochastic weighted particle index
-  index_sweight = particle->find_custom((char *) "sweight");
-
   nglocal = 0;
   vector_grid = NULL;
   tally = NULL;
@@ -170,10 +167,6 @@ void ComputeSonineGrid::compute_per_grid()
   double *v,*vec;
   double vthermal[3];
 
-  double *sweights;
-  if(index_sweight >= 0)
-    sweights = particle->edvec[particle->ewhich[index_sweight]];
-
   // compute COM velocity on this timestep for each cell and group
 
   for (i = 0; i < nglocal; i++) {
@@ -193,7 +186,7 @@ void ComputeSonineGrid::compute_per_grid()
     if (!(cinfo[icell].mask & groupbit)) continue;
 
     mass = species[ispecies].mass;
-    if(index_sweight >= 0) mass *= sweights[i]/update->fnum;
+    if (particle->weightflag) mass *= particles[i].weight;
     v = particles[i].v;
 
     vcom[icell][igroup][0] += mass * v[0];
@@ -233,7 +226,7 @@ void ComputeSonineGrid::compute_per_grid()
     k = igroup*npergroup;
 
     mass = species[ispecies].mass;
-    if(index_sweight > 0) mass *= sweights[i]/update->fnum;
+    if (particle->weightflag) mass *= particles[i].weight;
     vec[k++] += mass;
 
     v = particles[i].v;
