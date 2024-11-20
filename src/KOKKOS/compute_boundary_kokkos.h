@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -80,17 +80,16 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
 
   double oswfrac, iswfrac, jswfrac;
   oswfrac = iswfrac = jswfrac = 1.0;
-  if (index_sweight >= 0) {
+  if (particle_weightflag) {
     int nout = 0;
     oswfrac = 0.0;
-    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
     if(ip) {
-      iswfrac = d_sweights[ip - particle->particles]/fnum;
+      iswfrac = ip->weight;
       oswfrac += iswfrac;
       nout++;
     }
     if(jp) {
-      jswfrac = d_sweights[jp - particle->particles]/fnum;
+      jswfrac = jp->weight;
       oswfrac += jswfrac;
       nout++;
     }
@@ -286,13 +285,12 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
   int mvv2e;
   double fnum;
   DAT::t_int_1d d_which;
-  DAT::t_int_1d d_ewhich;
-  tdual_struct_tdual_float_1d_1d k_edvec;
 
   DAT::tdual_float_2d_lr k_myarray; // local accumulator array
   DAT::t_float_2d_lr d_myarray;
 
   int need_dup;
+  int particle_weightflag;
   Kokkos::Experimental::ScatterView<F_FLOAT**, typename DAT::t_float_2d_lr::array_layout,DeviceType,typename Kokkos::Experimental::ScatterSum,typename Kokkos::Experimental::ScatterDuplicated> dup_myarray;
   Kokkos::Experimental::ScatterView<F_FLOAT**, typename DAT::t_float_2d_lr::array_layout,DeviceType,typename Kokkos::Experimental::ScatterSum,typename Kokkos::Experimental::ScatterNonDuplicated> ndup_myarray;
 

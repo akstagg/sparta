@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -52,7 +52,6 @@ class ComputeSurf : public Compute {
 
   int ntally;              // # of surfs I have tallied for
   int maxtally;            // # of tallies currently allocated
-  int index_sweight;       // stochastic weighted particle index
   surfint *tally2surf;     // tally2surf[I] = surf ID of Ith tally
 
   // hash for surf IDs

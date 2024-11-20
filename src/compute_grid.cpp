@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -159,9 +159,6 @@ ComputeGrid::ComputeGrid(SPARTA *sparta, int narg, char **arg) :
     iarg++;
   }
 
-  // stochastic weighted particle index
-  index_sweight = particle->find_custom((char *) "sweight");
-
   // ntotal = total # of columns in tally array
   // reset_map() adjusts indices in initial map() using final npergroup
   // also adds columns to tally array for CELLCOUNT/CELLMASS
@@ -229,10 +226,6 @@ void ComputeGrid::compute_per_grid()
   double mass;
   double *v,*vec;
 
-  double *sweights;
-  if(index_sweight >= 0)
-    sweights = particle->edvec[particle->ewhich[index_sweight]];
-
   // zero all accumulators - could do this with memset()
 
   for (i = 0; i < nglocal; i++)
@@ -244,6 +237,7 @@ void ComputeGrid::compute_per_grid()
   // perform all tallies needed for each particle
   // depends on its species group and the user-requested values
 
+  double swfrac = 1.0;
   for (i = 0; i < nlocal; i++) {
     ispecies = particles[i].ispecies;
     igroup = s2g[ispecies];
@@ -253,8 +247,8 @@ void ComputeGrid::compute_per_grid()
 
     mass = species[ispecies].mass;
     v = particles[i].v;
-    double swfrac = 1.0;
-    if(index_sweight >= 0) swfrac = sweights[i]/update->fnum;
+    if (particle->weightflag) swfrac = particles[i].weight;
+
     mass *= swfrac;
 
     vec = tally[icell];

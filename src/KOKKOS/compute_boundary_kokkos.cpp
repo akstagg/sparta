@@ -125,10 +125,9 @@ void ComputeBoundaryKokkos::pre_boundary_tally()
 
   ParticleKokkos* particle_kk = (ParticleKokkos*) particle;
   particle_kk->sync(Device,PARTICLE_MASK|SPECIES_MASK);
-  d_ewhich = particle_kk->k_ewhich.d_view;
-  k_edvec = particle_kk->k_edvec;
   d_species = particle_kk->k_species.d_view;
   d_s2g = particle_kk->k_species2group.d_view;
+  particle_weightflag = particle_kk->weightflag;
 
   need_dup = sparta->kokkos->need_dup<DeviceType>();
   if (need_dup)

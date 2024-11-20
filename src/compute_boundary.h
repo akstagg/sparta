@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -40,7 +40,6 @@ class ComputeBoundary : public Compute {
  protected:
   int imix,nvalue,ngroup,ntotal,nrow;
   int *which;
-  int index_sweight;             // stochastic weighted particle index
 
   int weightflag;                // 1 if cell weighting is enabled
   double weight;                 // particle weight, based on initial cell

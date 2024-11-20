@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -76,9 +76,6 @@ ComputeBoundary::ComputeBoundary(SPARTA *sparta, int narg, char **arg) :
 
   memory->create(array,size_array_rows,size_array_cols,"boundary:array");
   memory->create(myarray,size_array_rows,size_array_cols,"boundary:array");
-
-  // stochastic weighted particle index
-  index_sweight = particle->find_custom((char *) "sweight");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -187,20 +184,20 @@ void ComputeBoundary::boundary_tally(int iface, int istyle, int reaction,
   if (igroup < 0) return;
 
   // assume non-reacting and no splitting at boundary
+
   double oswfrac, iswfrac, jswfrac;
-  oswfrac = iswfrac = jswfrac = 1.0;
-  double *sweights;
-  if(index_sweight >= 0) {
+  iswfrac = jswfrac = oswfrac = 1.0;
+
+  if (particle->weightflag) {
     int nout = 0;
     oswfrac = 0.0;
-    sweights = particle->edvec[particle->ewhich[index_sweight]];
     if(ip) {
-      iswfrac = sweights[ip - particle->particles]/update->fnum;
+      iswfrac = ip->weight;
       oswfrac += iswfrac;
       nout++;
     }
     if(jp) {
-      jswfrac = sweights[jp - particle->particles]/update->fnum;
+      jswfrac = jp->weight;
       oswfrac += jswfrac;
       nout++;
     }
@@ -388,8 +385,6 @@ void ComputeBoundary::boundary_tally(int iface, int istyle, int reaction,
       case ETOT:
         vsqpre = origmass * MathExtra::lensq3(vorig);
         otherpre = (iorig->erot + iorig->evib) * oswfrac;
-        //        AKS bug printf("POSSIBLE BUG: compare ivsqpost to jvsqpost below in compute_boundary.cpp\n");
-        //        AKS bug printf("    also check in compute_boundary_kokkos.h\n");
         if (ip) {
           ivsqpost = imass * MathExtra::lensq3(ip->v);
           iother = (ip->erot + ip->evib) * iswfrac;
