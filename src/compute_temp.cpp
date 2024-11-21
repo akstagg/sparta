@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -30,9 +30,6 @@ ComputeTemp::ComputeTemp(SPARTA *sparta, int narg, char **arg) :
   if (narg != 2) error->all(FLERR,"Illegal compute temp command");
 
   scalar_flag = 1;
-
-  // stochastic weighted particle index
-  index_sweight = particle->find_custom((char *) "sweight");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -48,14 +45,10 @@ double ComputeTemp::compute_scalar()
   double *v;
   double t = 0.0;
 
-  double *sweights;
-  if(index_sweight >= 0)
-    sweights = particle->edvec[particle->ewhich[index_sweight]];
-
   double swfrac = 1.0;
   for (int i = 0; i < nlocal; i++) {
     v = particles[i].v;
-    if(index_sweight >= 0) swfrac = sweights[i]/update->fnum;
+    if(particle->weightflag) swfrac = particles[i].weight;
     t += (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]) *
       species[particles[i].ispecies].mass * swfrac;
   }

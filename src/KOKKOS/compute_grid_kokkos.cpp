@@ -109,7 +109,7 @@ void ComputeGridKokkos::compute_per_grid_kokkos()
 
   int nlocal = particle->nlocal;
   fnum = update->fnum;
-  particle_weightflag = particle_kk->weightflag;
+  particle_weightflag = particle_kk->weightflag_kk;
 
   // zero all accumulators
 

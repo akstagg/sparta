@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -55,10 +55,7 @@ void ComputeTempKokkos::operator()(const int& i, double& lsum) const {
   const int ispecies = d_particles[i].ispecies;
 
   double swfrac = 1.0;
-  if (index_sweight >= 0) {
-    auto &d_sweights = k_edvec.d_view[d_ewhich[index_sweight]].k_view.d_view;
-    swfrac = d_sweights[i]/fnum;
-  }
+  if (particle_weightflag) swfrac = d_particles[i].weight;
   const double mass = d_species[ispecies].mass;
   lsum += (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]) * mass * swfrac;
 }
@@ -75,6 +72,7 @@ double ComputeTempKokkos::compute_scalar_kokkos()
   k_edvec = particle_kk->k_edvec;
   int nlocal = particle->nlocal;
   fnum = update->fnum;
+  particle_weightflag = particle_kk->weightflag_kk;
 
   double t = 0.0;
   auto range_policy = Kokkos::RangePolicy<DeviceType>(0, nlocal);

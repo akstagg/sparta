@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -37,10 +37,9 @@ class ComputeTempKokkos : public ComputeTemp {
 
  private:
   double fnum;
+  int particle_weightflag;
   t_particle_1d d_particles;
   t_species_1d d_species;
-  DAT::t_int_1d d_ewhich;
-  tdual_struct_tdual_float_1d_1d k_edvec;
 
   double compute_scalar_kokkos();
 };
