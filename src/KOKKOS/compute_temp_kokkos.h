@@ -36,7 +36,6 @@ class ComputeTempKokkos : public ComputeTemp {
   void operator()(const int&, double&) const;
 
  private:
-  double fnum;
   int particle_weightflag;
   t_particle_1d d_particles;
   t_species_1d d_species;

@@ -75,7 +75,6 @@ void ComputeBoundaryKokkos::init()
   for (int n=0; n<nvalue; n++)
     h_which(n) = which[n];
   Kokkos::deep_copy(d_which,h_which);
-  fnum = update->fnum;
 }
 
 /* ---------------------------------------------------------------------- */

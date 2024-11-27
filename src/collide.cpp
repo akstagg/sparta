@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -21,13 +21,13 @@
 #include "particle.h"
 #include "mixture.h"
 #include "update.h"
+#include "domain.h"
 #include "grid.h"
 #include "comm.h"
 #include "react.h"
 #include "modify.h"
 #include "fix.h"
 #include "fix_ambipolar.h"
-#include "fix_swpm.h"
 #include "random_mars.h"
 #include "random_knuth.h"
 #include "memory.h"
@@ -335,14 +335,6 @@ void Collide::init()
                  "electrons be their own group");
   }
 
-  // find swpm fix
-
-  if (swpmflag) {
-    index_sweight = particle->find_custom((char *) "sweight");
-    if (index_sweight < 0)
-      error->all(FLERR,"Collision swpm without fix swpm");
-  }
-
   // vre_next = next timestep to zero vremax & remain, based on vre_every
 
   if (vre_every) vre_next = (update->ntimestep/vre_every)*vre_every + vre_every;
@@ -415,6 +407,12 @@ void Collide::modify_params(int narg, char **arg)
       iarg += 3;
     } else if (strcmp(arg[iarg],"swpm") == 0) {
       if (iarg+4 > narg) error->all(FLERR,"Illegal collide_modify command");
+      if (domain->axisymmetric)
+        error->all(FLERR,"SWPM cannot be used in axi-symmetric simulations");
+      if (grid->cellweightflag)
+        error->all(FLERR,"SWPM cannot be used with cell-based weighting");
+      // enable particle weighting
+      particle->weightflag = 1;
       if (strcmp(arg[iarg+1],"no") == 0) swpmflag = 0;
       else if (strcmp(arg[iarg+1],"yes") == 0) swpmflag = 1;
       else error->all(FLERR,"Illegal collide_modify command");

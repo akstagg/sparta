@@ -106,7 +106,6 @@ void ComputeSonineGridKokkos::compute_per_grid_kokkos()
   d_cinfo = grid_kk->k_cinfo.d_view;
   d_s2g = particle_kk->k_species2group.d_view;
   int nlocal = particle->nlocal;
-  fnum = update->fnum;
   particle_weightflag = particle_kk->weightflag_kk;
 
   // zero all accumulators

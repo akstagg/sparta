@@ -68,10 +68,7 @@ double ComputeTempKokkos::compute_scalar_kokkos()
   particle_kk->sync(Device, PARTICLE_MASK|SPECIES_MASK);
   d_particles = particle_kk->k_particles.d_view;
   d_species = particle_kk->k_species.d_view;
-  d_ewhich = particle_kk->k_ewhich.d_view;
-  k_edvec = particle_kk->k_edvec;
   int nlocal = particle->nlocal;
-  fnum = update->fnum;
   particle_weightflag = particle_kk->weightflag_kk;
 
   double t = 0.0;

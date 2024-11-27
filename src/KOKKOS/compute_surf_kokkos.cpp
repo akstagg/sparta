@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -91,7 +91,6 @@ void ComputeSurfKokkos::init()
   for (int n=0; n<nvalue; n++)
     h_which(n) = which[n];
   Kokkos::deep_copy(d_which,h_which);
-  fnum = update->fnum;
 }
 
 /* ----------------------------------------------------------------------
@@ -147,8 +146,7 @@ void ComputeSurfKokkos::pre_surf_tally()
   particle_kk->sync(Device,SPECIES_MASK);
   d_species = particle_kk->k_species.d_view;
   d_s2g = particle_kk->k_species2group.d_view;
-  d_ewhich = particle_kk->k_ewhich.d_view;
-  k_edvec = particle_kk->k_edvec;
+  particle_weightflag = particle_kk->weightflag_kk;
 
   SurfKokkos* surf_kk = (SurfKokkos*) surf;
   surf_kk->sync(Device,ALL_MASK);
@@ -198,7 +196,7 @@ void ComputeSurfKokkos::post_surf_tally()
 {
   if (need_dup) {
     Kokkos::Experimental::contribute(d_array_surf_tally, dup_array_surf_tally);
-    dup_array_surf_tally = decltype(dup_array_surf_tally)(); // free duplicated memory
+    dup_array_surf_tally = {}; // free duplicated memory
   }
 
   k_tally2surf.modify_device();

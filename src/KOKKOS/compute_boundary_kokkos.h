@@ -269,7 +269,7 @@ void boundary_tally_kk(int iface, int istyle, int reaction,
           iother = (ip->erot + ip->evib) * iswfrac;
         } else ivsqpost = iother = 0.0;
         if (jp) {
-          jvsqpost = jmass * MathExtraKokkos::lensq3(jp->v) * jswfrac;
+          jvsqpost = jmass * MathExtraKokkos::lensq3(jp->v);
           jother = (jp->erot + jp->evib) * jswfrac;
         } else jvsqpost = jother = 0.0;
         a_myarray(iface,k++) -= 0.5*mvv2e*(ivsqpost + jvsqpost - vsqpre) +

@@ -131,7 +131,6 @@ void ComputeTvibGridKokkos::compute_per_grid_kokkos()
 
   d_s2g = particle_kk->k_species2group.view<DeviceType>();
   int nlocal = particle->nlocal;
-  fnum = update->fnum;
   particle_weightflag = particle_kk->weightflag_kk;
 
   // zero all accumulators
