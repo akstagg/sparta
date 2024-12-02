@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -202,9 +202,8 @@ int CollideVSS::test_collision(int icell, int igroup, int jgroup,
 
   double ijsw = 1.0;
   if (swpmflag) {
-    double *sweights = particle->edvec[particle->ewhich[index_sweight]];
-    double isw = sweights[ip - particle->particles];
-    double jsw = sweights[jp - particle->particles];
+    double isw = ip->weight*update->fnum;
+    double jsw = jp->weight*update->fnum;
     ijsw = MAX(isw ,jsw)/sweight_max;
   }
 
@@ -292,6 +291,7 @@ int CollideVSS::perform_collision(Particle::OnePart *&ip,
     // index of new K particle = nlocal-1
     // if add_particle() performs a realloc:
     //   make copy of x,v, then repoint ip,jp to new particles data struct
+    //   unless electron
 
     if (kspecies >= 0) {
       int id = MAXSMALLINT*random->uniform();
@@ -299,11 +299,15 @@ int CollideVSS::perform_collision(Particle::OnePart *&ip,
       Particle::OnePart *particles = particle->particles;
       memcpy(x,ip->x,3*sizeof(double));
       memcpy(v,ip->v,3*sizeof(double));
+      int ielectron_flag = (ambiflag && ip->ispecies == ambispecies);
+      int jelectron_flag = (ambiflag && jp->ispecies == ambispecies);
       int reallocflag =
         particle->add_particle(id,kspecies,ip->icell,x,v,0.0,0.0);
       if (reallocflag) {
-        ip = particle->particles + (ip - particles);
-        jp = particle->particles + (jp - particles);
+        if (!ielectron_flag)
+          ip = particle->particles + (ip - particles);
+        if (!jelectron_flag)
+          jp = particle->particles + (jp - particles);
       }
 
       kp = &particle->particles[particle->nlocal-1];
