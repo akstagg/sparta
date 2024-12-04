@@ -171,6 +171,10 @@ class GridKokkos : public Grid {
   DAT::t_int_1d d_cellcount;
   DAT::t_int_2d d_plist;
 
+  // particle lists for stochastic particle weighting
+  DAT::t_int_2d d_pL;
+  DAT::t_int_2d d_pLU;
+
   // hash for all cell IDs (owned,ghost,parent).  The _d postfix refers to the
   // fact that this hash lives on "device"
   hash_type hash_kk;

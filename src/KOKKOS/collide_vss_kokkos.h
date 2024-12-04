@@ -58,6 +58,9 @@ template < int NEARCP, int ATOMIC_REDUCTION >
 struct TagCollideCollisionsOne{};
 
 template < int ATOMIC_REDUCTION >
+struct TagCollideCollisionsOneSW{};
+
+template < int ATOMIC_REDUCTION >
 struct TagCollideCollisionsOneAmbipolar{};
 
 class CollideVSSKokkos : public CollideVSS {
@@ -111,6 +114,14 @@ class CollideVSSKokkos : public CollideVSS {
 
   template < int ATOMIC_REDUCTION >
   KOKKOS_INLINE_FUNCTION
+  void operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >, const int&) const;
+
+  template < int ATOMIC_REDUCTION >
+  KOKKOS_INLINE_FUNCTION
+  void operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >, const int&, COLLIDE_REDUCE&) const;
+
+  template < int ATOMIC_REDUCTION >
+  KOKKOS_INLINE_FUNCTION
   void operator()(TagCollideCollisionsOneAmbipolar< ATOMIC_REDUCTION >, const int&) const;
 
   template < int ATOMIC_REDUCTION >
@@ -142,6 +153,8 @@ class CollideVSSKokkos : public CollideVSS {
   t_particle_1d d_particles;
   t_species_1d_const d_species;
   DAT::t_int_2d d_plist;
+  DAT::t_int_2d d_pL;
+  DAT::t_int_2d d_pLU;
 
   DAT::t_int_1d d_ewhich;
   tdual_struct_tdual_int_1d_1d k_eivec;
@@ -205,6 +218,7 @@ class CollideVSSKokkos : public CollideVSS {
   DAT::t_int_2d d_nn_last_partner;
 
   template < int NEARCP > void collisions_one(COLLIDE_REDUCE&);
+  void collisions_one_sw(COLLIDE_REDUCE&);
   void collisions_one_ambipolar(COLLIDE_REDUCE&);
 
   // VSS specific
@@ -216,6 +230,7 @@ class CollideVSSKokkos : public CollideVSS {
   t_params_2d d_params;
 
   double dt,fnum,boltz;
+  double swgt_max;
   int maxcellcount,react_defined;
 
   KOKKOS_INLINE_FUNCTION

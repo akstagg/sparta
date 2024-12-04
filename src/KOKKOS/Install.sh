@@ -45,6 +45,7 @@ fi
 
 # list of files with optional dependencies
 
+action collide_swpm_kokkos.cpp
 action collide_vss_kokkos.cpp
 action collide_vss_kokkos.h
 action compute_boundary_kokkos.cpp
