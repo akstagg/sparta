@@ -129,7 +129,6 @@ class Collide : protected Pointers {
   // stochastic weighted particle method
   // if Ncmin > Ncmax, then particles always split
   int swpmflag;         // 1 if swpm option is enabled
-  int index_sweight;    // 1 custom for swpm
   int Ncmin;            // minimum number of particles in cell to NOT split
   int Ncmax;            // maximum number of particles in cell before reduce
   int Ngmin;            // minimum number of particles in group to reduce

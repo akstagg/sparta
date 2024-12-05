@@ -99,6 +99,11 @@ class CollideVSSKokkos : public CollideVSS {
                         int &) const;
 
   KOKKOS_INLINE_FUNCTION
+  double attempt_collision_sw_kokkos(int, int, double, double, double, rand_type &) const;
+  KOKKOS_INLINE_FUNCTION
+  int test_collision_sw_kokkos(int, int, int, Particle::OnePart *, Particle::OnePart *, struct State &, double, rand_type &) const;
+
+  KOKKOS_INLINE_FUNCTION
   void operator()(TagCollideResetVremax, const int&) const;
 
   KOKKOS_INLINE_FUNCTION
@@ -230,7 +235,6 @@ class CollideVSSKokkos : public CollideVSS {
   t_params_2d d_params;
 
   double dt,fnum,boltz;
-  double swgt_max;
   int maxcellcount,react_defined;
 
   KOKKOS_INLINE_FUNCTION
