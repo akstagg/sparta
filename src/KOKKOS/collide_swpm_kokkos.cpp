@@ -50,7 +50,7 @@ enum{CONSTANT,VARIABLE};
 
 
 /* ----------------------------------------------------------------------
-   NTC algorithm for a single group
+   Stochastic weighted algorithm
 ------------------------------------------------------------------------- */
 
 void CollideVSSKokkos::collisions_one_sw(COLLIDE_REDUCE &reduce)
@@ -68,8 +68,10 @@ void CollideVSSKokkos::collisions_one_sw(COLLIDE_REDUCE &reduce)
   GridKokkos* grid_kk = (GridKokkos*) grid;
   grid_kk->sync(Device,CINFO_MASK);
   d_plist = grid_kk->d_plist;
+  d_pL = grid_kk->d_pL;
+  d_pLU = grid_kk->d_pLU;
 
-
+  // this stuff will eventually go in a retry loop (see collide_vss_kokkos code)
   grid_kk_copy.copy(grid_kk);
 
   if (sparta->kokkos->atomic_reduction) {
@@ -79,6 +81,8 @@ void CollideVSSKokkos::collisions_one_sw(COLLIDE_REDUCE &reduce)
       Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagCollideCollisionsOneSW<0> >(0,nglocal),*this);
   } else
     Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType, TagCollideCollisionsOneSW<-1> >(0,nglocal),*this,reduce);
+
+  Kokkos::deep_copy(h_scalars,d_scalars);
 }
 
 template < int ATOMIC_REDUCTION >
@@ -98,13 +102,63 @@ void CollideVSSKokkos::operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >,
 
   const double volume = grid_kk_copy.obj.k_cinfo.d_view[icell].volume / grid_kk_copy.obj.k_cinfo.d_view[icell].weight;
   if (volume == 0.0) d_error_flag() = 1;
+  // NOTE:  deal with other things causing errors:  AKS
+
+  struct State precoln;       // state before collision
+  struct State postcoln;      // state after collision
+
+  rand_type rand_gen = rand_pool.get_state();
 
   // find max particle weight in this cell
-  double swgt_max = 0.0;
+  double sweight_max_kk = 0.0;
   for (int n = 0; n < np; n++)
     if (swpmflag)
-      swgt_max = MAX(d_particles[d_plist(icell,n)].weight, swgt_max);
-  swgt_max *= fnum;
+      sweight_max_kk = MAX(d_particles[d_plist(icell,n)].weight, sweight_max_kk);
+  sweight_max_kk *= fnum;
+
+  // attempt = exact collision attempt count for all particles in cell
+  // nattempt = rounded attempt with RN
+  // if no attempts, continue to next grid cell
+
+  double pre_wtf_kk = 1.0;
+  if (np >= Ncmin && Ncmin > 0.0)
+    pre_wtf_kk = 0.0;
+
+  const double attempt = attempt_collision_sw_kokkos(icell,np,volume,pre_wtf_kk,sweight_max_kk,rand_gen);
+  const int nattempt = static_cast<int> (attempt);
+  if (!nattempt){
+    rand_pool.free_state(rand_gen);
+    return;
+  }
+  if (ATOMIC_REDUCTION == 1)
+    Kokkos::atomic_add(&d_nattempt_one(),nattempt);
+  else if (ATOMIC_REDUCTION == 0)
+    d_nattempt_one() += nattempt;
+  else
+    reduce.nattempt_one += nattempt;
+
+  // perform collisions
+  // select random pair of particles, cannot be same
+  // test if collision actually occurs
+
+  for (int m = 0; m < nattempt; m++) {
+    const int i = np * rand_gen.drand();
+    int j = np * rand_gen.drand();
+    while (i == j) j = np * rand_gen.drand();
+
+    Particle::OnePart* ipart = &d_particles[d_plist(icell,i)];
+    Particle::OnePart* jpart = &d_particles[d_plist(icell,j)];
+    Particle::OnePart* kpart;
+    Particle::OnePart* lpart;
+
+    // test if collision actually occurs, then perform it
+    if (!test_collision_sw_kokkos(icell,0,0,ipart,jpart,precoln,sweight_max_kk,rand_gen)) continue;
+
+    // split particles
+    int index_kpart;
+    int newp = split(pre_wtf_kk,index_kpart,rand_gen,ipart,jpart,kpart,lpart);
+    if (d_retry()) return;
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -164,3 +218,140 @@ int CollideVSSKokkos::test_collision_sw_kokkos(int icell, int igroup, int jgroup
   precoln.vr2 = vr2;
   return 1;
 }
+
+KOKKOS_INLINE_FUNCTION
+int CollideVSSKokkos::split(double pre_wtf_kk,
+                            int &index_kpart,
+                            rand_type &rand_gen,
+                            Particle::OnePart *&ip,
+                            Particle::OnePart *&jp,
+                            Particle::OnePart *&kp,
+                            Particle::OnePart *&lp)  const {
+  double xk[3],vk[3];
+  double xl[3],vl[3];
+  double erotk, erotl;
+
+  // checks if particles properly deleted
+  kp = NULL;
+  lp = NULL;
+
+  // weight transfer function is assumed to be
+  // ... MIN(ip->sweight,jp->sweight)/(1 + pre_wtf * wtf)
+
+  double isw = ip->weight;
+  double jsw = jp->weight;
+
+  // error check goes here-----------
+  if (isw <= 0.0 || jsw <= 0.0)
+    ;
+  // error check --------------------
+
+  int ks, ls, kcell, lcell;
+  double Gwtf, ksw, lsw;
+
+  if(isw >= jsw) { // particle ip has larger weight
+    Gwtf = jsw/(1.0+pre_wtf_kk*wtf);
+    ksw  = isw-Gwtf;
+    lsw  = jsw-Gwtf;
+
+    ks = ip->ispecies;
+    ls = jp->ispecies;
+
+    kcell = ip->icell;
+    lcell = jp->icell;
+
+    memcpy(xk,ip->x,3*sizeof(double));
+    memcpy(vk,ip->v,3*sizeof(double));
+    memcpy(xl,jp->x,3*sizeof(double));
+    memcpy(vl,jp->v,3*sizeof(double));
+
+    erotk = ip->erot;
+    erotl = jp->erot;
+
+  } else {   // particle jp has larger weight
+    Gwtf = isw/(1.0+pre_wtf_kk*wtf);
+    ksw  = jsw-Gwtf;
+    lsw  = isw-Gwtf;
+
+    ks = jp->ispecies;
+    ls = ip->ispecies;
+
+    kcell = jp->icell;
+    lcell = ip->icell;
+
+    memcpy(xk,jp->x,3*sizeof(double));
+    memcpy(vk,jp->v,3*sizeof(double));
+    memcpy(xl,ip->x,3*sizeof(double));
+    memcpy(vl,ip->v,3*sizeof(double));
+
+    erotk = jp->erot;
+    erotl = ip->erot;
+  }
+
+  // update weights
+
+  ip->weight = Gwtf;
+  jp->weight = Gwtf;
+
+  // Gwtf should never be negative or zero
+  if (Gwtf <= 0.0)
+    ; // error->one(FLERR,"Negative weight assigned after split");
+  if (Gwtf > 0.0 && pre_wtf_kk > 0.0)
+    if (ksw <= 0.0 || lsw <= 0.0)
+      ; // error->one(FLERR,"Zero or negative weight after split");
+
+  // number of new particles
+  int newp = 0;
+
+  // gk is always the bigger of the two
+
+  if(ksw > 0) {
+    int id = MAXSMALLINT*rand_gen.drand();;
+    index_kpart = Kokkos::atomic_fetch_add(&d_nlocal(),1);
+    int reallocflag =
+      ParticleKokkos::add_particle_kokkos(d_particles,index_kpart,id,ks,kcell,xk,vk,erotk,0.0);
+    if (reallocflag) {
+      d_retry() = 1;
+      d_part_grow() = 1;
+      return 0;
+    }
+    newp++;
+    kp = &d_particles[index_kpart];
+    kp->weight = ksw;
+  }
+
+  if (kp) {
+    if (kp->weight <= 0.0) {
+      ; // error output here
+    }
+  }
+
+  // there should never be case where you add particle "l" if
+  // ... you did not add particle "k"
+
+  if(lsw > 0) {
+    if(ksw <= 0)
+      ; // error->one(FLERR,"Bad addition to particle list");
+
+    int id = MAXSMALLINT*rand_gen.drand();;
+    index_kpart = Kokkos::atomic_fetch_add(&d_nlocal(),1);
+    int reallocflag =
+      ParticleKokkos::add_particle_kokkos(d_particles,index_kpart,id,ls,lcell,xl,vl,erotl,0.0);
+    if (reallocflag) {
+      d_retry() = 1;
+      d_part_grow() = 1;
+      return 0;
+    }
+    newp++;
+    lp = &d_particles[index_kpart];
+    lp->weight = lsw;
+  }
+
+  if (lp) {
+    if (lp->weight <= 0.0) {
+      ; // error->one(FLERR,"New particle [l] has bad weight");
+    }
+  }
+  return newp;
+}
+

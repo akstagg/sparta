@@ -104,6 +104,15 @@ class CollideVSSKokkos : public CollideVSS {
   int test_collision_sw_kokkos(int, int, int, Particle::OnePart *, Particle::OnePart *, struct State &, double, rand_type &) const;
 
   KOKKOS_INLINE_FUNCTION
+  int split(double,
+            int &,
+            rand_type &,
+            Particle::OnePart *&,
+            Particle::OnePart *&,
+            Particle::OnePart *&,
+            Particle::OnePart *&) const;
+
+  KOKKOS_INLINE_FUNCTION
   void operator()(TagCollideResetVremax, const int&) const;
 
   KOKKOS_INLINE_FUNCTION
