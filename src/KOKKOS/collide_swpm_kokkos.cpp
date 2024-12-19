@@ -182,11 +182,22 @@ void CollideVSSKokkos::operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >,
     }
   }
 
-  // since ipart and jpart have same weight, do not need
-  // ... to account for weight during collision itself
-  // also the splits are all handled beforehand
 
-  // AKS stopped here
+  // AKS stopped here:  question for January-> if d_retry is set to 1 inside split(), then is the check on d_plist.extent(1)
+  //  above really necessary?  or should we not set d_retry=1 inside split but instead only do the check right above so that
+  // maxcellcount is reset? (NOTE: clearly, if d_retry is set to 1 inside split, then the "if (newp>0)" block is never
+  // executed.)  Is the check above and the one inside split() checking for the same thing? And what about d_part_grow?
+  // Does it need to be set above?
+
+  // then next thing to do is:
+  //   since ipart and jpart have same weight, do not need
+  //   ... to account for weight during collision itself
+  //   also the splits are all handled beforehand
+
+
+
+
+
 
 
   rand_pool.free_state(rand_gen);
