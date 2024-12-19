@@ -155,10 +155,41 @@ void CollideVSSKokkos::operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >,
     if (!test_collision_sw_kokkos(icell,0,0,ipart,jpart,precoln,sweight_max_kk,rand_gen)) continue;
 
     // split particles
-    int index_kpart;
-    int newp = split(pre_wtf_kk,index_kpart,rand_gen,ipart,jpart,kpart,lpart);
-    if (d_retry()) return;
+    int index_kpart, index_lpart;
+    int newp = split(pre_wtf_kk,index_kpart,index_lpart,rand_gen,ipart,jpart,kpart,lpart);
+    if (d_retry()) {
+      rand_pool.free_state(rand_gen);
+      return;
+    }
+
+    // add new particles to particle list
+    if (newp > 0) {
+      if (np+newp <= d_plist.extent(1)) { // check if new particles can be added without reallocation
+        if (newp == 2) {
+          d_plist(icell,np++) = index_kpart;
+          d_plist(icell,np++) = index_lpart;
+        }
+        else if (newp == 1) {
+          d_plist(icell,np++) = index_kpart;
+        }
+      }
+      else {
+        d_retry() = 1;
+        d_maxcellcount() += DELTACELLCOUNT;
+        rand_pool.free_state(rand_gen);
+        return;
+      }
+    }
   }
+
+  // since ipart and jpart have same weight, do not need
+  // ... to account for weight during collision itself
+  // also the splits are all handled beforehand
+
+  // AKS stopped here
+
+
+  rand_pool.free_state(rand_gen);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -222,6 +253,7 @@ int CollideVSSKokkos::test_collision_sw_kokkos(int icell, int igroup, int jgroup
 KOKKOS_INLINE_FUNCTION
 int CollideVSSKokkos::split(double pre_wtf_kk,
                             int &index_kpart,
+                            int &index_lpart,
                             rand_type &rand_gen,
                             Particle::OnePart *&ip,
                             Particle::OnePart *&jp,
@@ -334,16 +366,16 @@ int CollideVSSKokkos::split(double pre_wtf_kk,
       ; // error->one(FLERR,"Bad addition to particle list");
 
     int id = MAXSMALLINT*rand_gen.drand();;
-    index_kpart = Kokkos::atomic_fetch_add(&d_nlocal(),1);
+    index_lpart = Kokkos::atomic_fetch_add(&d_nlocal(),1);
     int reallocflag =
-      ParticleKokkos::add_particle_kokkos(d_particles,index_kpart,id,ls,lcell,xl,vl,erotl,0.0);
+      ParticleKokkos::add_particle_kokkos(d_particles,index_lpart,id,ls,lcell,xl,vl,erotl,0.0);
     if (reallocflag) {
       d_retry() = 1;
       d_part_grow() = 1;
       return 0;
     }
     newp++;
-    lp = &d_particles[index_kpart];
+    lp = &d_particles[index_lpart];
     lp->weight = lsw;
   }
 

@@ -106,6 +106,7 @@ class CollideVSSKokkos : public CollideVSS {
   KOKKOS_INLINE_FUNCTION
   int split(double,
             int &,
+            int &,
             rand_type &,
             Particle::OnePart *&,
             Particle::OnePart *&,
