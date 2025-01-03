@@ -150,6 +150,7 @@ void CollideVSSKokkos::operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >,
     Particle::OnePart* jpart = &d_particles[d_plist(icell,j)];
     Particle::OnePart* kpart;
     Particle::OnePart* lpart;
+    Particle::OnePart* mpart;
 
     // test if collision actually occurs, then perform it
     if (!test_collision_sw_kokkos(icell,0,0,ipart,jpart,precoln,sweight_max_kk,rand_gen)) continue;
@@ -157,10 +158,6 @@ void CollideVSSKokkos::operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >,
     // split particles
     int index_kpart, index_lpart;
     int newp = split(pre_wtf_kk,index_kpart,index_lpart,rand_gen,ipart,jpart,kpart,lpart);
-    if (d_retry()) {
-      rand_pool.free_state(rand_gen);
-      return;
-    }
 
     // add new particles to particle list
     if (newp > 0) {
@@ -180,26 +177,26 @@ void CollideVSSKokkos::operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >,
         return;
       }
     }
+
+    //   since ipart and jpart have same weight, do not need
+    //   ... to account for weight during collision itself
+    //   also the splits are all handled beforehand
+    mpart = NULL; // dummy particle
+    int index_mpart;
+    Particle::OnePart* recomb_part3 = NULL;
+    int recomb_species = -1;
+    double recomb_density = 0.0;
+    setup_collision_kokkos(ipart,jpart,precoln,postcoln);
+    perform_collision_kokkos(ipart,jpart,mpart,precoln,postcoln,rand_gen,
+                             recomb_part3,recomb_species,recomb_density,index_mpart);
+
+    if (ATOMIC_REDUCTION == 1)
+      Kokkos::atomic_increment(&d_ncollide_one());
+    else if (ATOMIC_REDUCTION == 0)
+      d_ncollide_one()++;
+    else
+      reduce.ncollide_one++;
   }
-
-
-  // AKS stopped here:  question for January-> if d_retry is set to 1 inside split(), then is the check on d_plist.extent(1)
-  //  above really necessary?  or should we not set d_retry=1 inside split but instead only do the check right above so that
-  // maxcellcount is reset? (NOTE: clearly, if d_retry is set to 1 inside split, then the "if (newp>0)" block is never
-  // executed.)  Is the check above and the one inside split() checking for the same thing? And what about d_part_grow?
-  // Does it need to be set above?
-
-  // then next thing to do is:
-  //   since ipart and jpart have same weight, do not need
-  //   ... to account for weight during collision itself
-  //   also the splits are all handled beforehand
-
-
-
-
-
-
-
   rand_pool.free_state(rand_gen);
 }
 
@@ -398,3 +395,17 @@ int CollideVSSKokkos::split(double pre_wtf_kk,
   return newp;
 }
 
+KOKKOS_INLINE_FUNCTION
+void CollideVSSKokkos::operator()(TagCollideRemoveTiny, const int &icell) const {
+
+  int np = grid_kk_copy.obj.d_cellcount[icell];
+  double sw_mean = 0.0;
+  int count = 0;
+  for (int n = 0; n < np; n++) {
+    double isw = d_particles[d_plist(icell,n)].weight;
+    if (isw > 0.) sw_mean += isw;
+  }
+  sw_mean /= np;
+
+  // mark particles with tiny weights for deletion
+}
