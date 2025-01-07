@@ -71,8 +71,51 @@ void CollideVSSKokkos::collisions_one_sw(COLLIDE_REDUCE &reduce)
   d_pL = grid_kk->d_pL;
   d_pLU = grid_kk->d_pLU;
 
-  // this stuff will eventually go in a retry loop (see collide_vss_kokkos code)
-  grid_kk_copy.copy(grid_kk);
+  copymode = 1;
+
+  /* ATOMIC_REDUCTION: 1 = use atomics
+                       0 = don't need atomics
+                      -1 = use parallel_reduce
+  */
+
+  // Stochastic weighting may create or delete more particles than existing views can hold.
+  //  Cannot grow a Kokkos view in a parallel loop, so
+  //  if the capacity of the view is exceeded, break out of parallel loop,
+  //  reallocate on the host, and then repeat the parallel loop again.
+  //  Unfortunately this leads to really messy code.
+
+  h_retry() = 1;
+
+  double extra_factor = 1.1; // should we define a swpm_retry_flag?
+  auto maxdelete_extra = maxdelete*extra_factor;
+  if (d_dellist.extent(0) < maxdelete_extra) {
+    memoryKK->destroy_kokkos(k_dellist,dellist);
+    memoryKK->create_kokkos(k_dellist,dellist,maxdelete_extra,"collide:dellist");
+    d_dellist = k_dellist.d_view;
+  }
+
+  maxcellcount = particle_kk->get_maxcellcount();
+  auto maxcellcount_extra = maxcellcount*extra_factor;
+  if (d_plist.extent(1) < maxcellcount_extra) {
+    d_plist = {};
+    Kokkos::resize(grid_kk->d_plist,nglocal,maxcellcount_extra);
+    d_plist = grid_kk->d_plist;
+  }
+
+  auto nlocal_extra = particle->nlocal*extra_factor;
+  if (d_particles.extent(0) < nlocal_extra) {
+    particle->grow(nlocal_extra - particle->nlocal);
+    d_particles = particle_kk->k_particles.d_view;
+    k_eiarray = particle_kk->k_eiarray;
+  }
+
+
+
+
+
+
+
+
 
   if (sparta->kokkos->atomic_reduction) {
     if (sparta->kokkos->need_atomics)
@@ -197,6 +240,32 @@ void CollideVSSKokkos::operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >,
     else
       reduce.ncollide_one++;
   }
+
+  // mark particles with tiny weights for deletion
+  double sw_mean = 0.0;
+  int count = 0;
+  for (int n = 0; n < np; n++) {
+    double isw = d_particles[d_plist(icell,n)].weight;
+    if (isw > 0.) sw_mean += isw;
+  }
+  sw_mean /= np;
+
+  for (int n = 0; n < np; n++) {
+    double isw = d_particles[d_plist(icell,n)].weight;
+    if (isw < sw_mean*1e-5) {
+      int ndelete = Kokkos::atomic_fetch_add(&d_ndelete(),1);
+      if (ndelete < d_dellist.extent(0)) {
+        d_dellist(ndelete) = d_plist(icell,n);
+        d_particles[d_plist(icell, n)].weight = -1.0;
+      } else {
+        d_retry() = 1;
+        d_maxdelete() += DELTADELETE;
+        rand_pool.free_state(rand_gen);
+        return;
+      }
+    }
+  }
+
   rand_pool.free_state(rand_gen);
 }
 
@@ -395,17 +464,3 @@ int CollideVSSKokkos::split(double pre_wtf_kk,
   return newp;
 }
 
-KOKKOS_INLINE_FUNCTION
-void CollideVSSKokkos::operator()(TagCollideRemoveTiny, const int &icell) const {
-
-  int np = grid_kk_copy.obj.d_cellcount[icell];
-  double sw_mean = 0.0;
-  int count = 0;
-  for (int n = 0; n < np; n++) {
-    double isw = d_particles[d_plist(icell,n)].weight;
-    if (isw > 0.) sw_mean += isw;
-  }
-  sw_mean /= np;
-
-  // mark particles with tiny weights for deletion
-}

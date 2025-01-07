@@ -53,7 +53,6 @@ typedef struct s_COLLIDE_REDUCE COLLIDE_REDUCE;
 
 struct TagCollideResetVremax{};
 struct TagCollideZeroNN{};
-struct TagCollideRemoveTiny{};
 
 template < int NEARCP, int ATOMIC_REDUCTION >
 struct TagCollideCollisionsOne{};
@@ -119,9 +118,6 @@ class CollideVSSKokkos : public CollideVSS {
 
   KOKKOS_INLINE_FUNCTION
   void operator()(TagCollideZeroNN, const int&) const;
-
-  KOKKOS_INLINE_FUNCTION
-  void operator()(TagCollideRemoveTiny, const int&) const;
 
   template < int NEARCP, int ATOMIC_REDUCTION >
   KOKKOS_INLINE_FUNCTION
