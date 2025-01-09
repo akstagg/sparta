@@ -39,6 +39,8 @@ using namespace MathConst;
 
 enum{NONE,DISCRETE,SMOOTH};            // several files
 enum{CONSTANT,VARIABLE};
+enum{ENERGY,HEAT,STRESS}; // particle reduction choices
+enum{BINARY,WEIGHT}; // grouping choices
 
 #define DELTAGRID 1000            // must be bigger than split cells per cell
 #define DELTADELETE 1024
@@ -647,11 +649,57 @@ template < int ATOMIC_REDUCTION >
 KOKKOS_INLINE_FUNCTION
 void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, const int &icell) const {
   COLLIDE_REDUCE reduce;
-  this->template operator()< ATOMIC_REDUCTION >(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >(), icell, reduce);
+  this->template operator()< ATOMIC_REDUCTION >(TagCollideGroupReduce< ATOMIC_REDUCTION >(), icell, reduce);
 }
 
 template < int ATOMIC_REDUCTION >
 KOKKOS_INLINE_FUNCTION
 void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, const int &icell, COLLIDE_REDUCE &reduce) const {
-  ;
+  if (d_retry()) return;
+
+  int np = grid_kk_copy.obj.d_cellcount[icell];
+  if (np <= Ncmax) return;
+
+  int n = 0;
+  for (int num = 0; num < np; num++) {
+    double isw = d_particles[d_plist(icell,num)].weight;
+    if (isw > 0.)
+      n++;
+  }
+
+  int nold;
+  double gbuf_kk = 0;
+  while (n > Ncmax) {
+    nold = n;
+    if (group_type == BINARY) {
+      group_bt_kokkos(n,gbuf_kk);
+    } else if (group_type == WEIGHT) {
+      ;
+    }
+  }
+}
+
+KOKKOS_INLINE_FUNCTION
+void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk) const {
+
+  // ignore groups which have too few particles
+  if (np <= Ngmin) return;
+
+  // compute stress tensor since it's needed for
+  // .. further dividing and reduction
+  double gsum, msum, mV[3], mVV[3][3], mVVV[3][3];
+  gsum = msum = 0.0;
+  for (int i = 0; i < 3; i++) {
+    mV[i] = 0.0;
+    for (int j = 0; j < 3; j++) {
+      mVV[i][j] = 0.0;
+      mVVV[i][j] = 0.0;
+    }
+  }
+
+  // find maximum particle weight
+  int ispecies;
+  double mass, psw, pmsw, vp[3];
+  double Erot;
+  
 }
