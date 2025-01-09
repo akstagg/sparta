@@ -835,9 +835,11 @@ void Collide::remove_tiny()
     while (ip >= 0) {
       ipart = &particles[ip];
       isw = ipart->weight;
-      if (isw > 0) sw_mean += isw;
+      if (isw > 0) {
+        sw_mean += isw;
+        n++;
+      }
       ip = next[ip];
-      n++;
     }
 
     sw_mean /= n;
@@ -846,6 +848,7 @@ void Collide::remove_tiny()
 
     ip = cinfo[icell].first;
     while (ip >= 0) {
+      isw = ipart->weight;
       if (isw < sw_mean*1e-5) {
         if (ndelete == maxdelete) {
           maxdelete += DELTADELETE;

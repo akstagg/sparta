@@ -389,7 +389,9 @@ void CollideVSSKokkos::collisions()
 
   COLLIDE_REDUCE reduce;
 
-  if (!ambiflag) {
+  if (swpmflag) {
+    collisions_one_sw(reduce);
+  } else if (!ambiflag) {
     if (nearcp == 0)
       collisions_one<0>(reduce);
     else
@@ -398,8 +400,8 @@ void CollideVSSKokkos::collisions()
     collisions_one_ambipolar(reduce);
   }
 
-  // remove any particles deleted in chemistry reactions
-  // if particles deleted/created by chemistry, particles are no longer sorted
+  // remove any particles deleted in chemistry reactions (or by stochastic particle weighting)
+  // if particles deleted/created by chemistry or particle weighting, particles are no longer sorted
 
   if (ndelete) {
     k_dellist.modify_device();
@@ -414,6 +416,14 @@ void CollideVSSKokkos::collisions()
   if (react) {
     particle->sorted = 0;
     ParticleKokkos* particle_kk = (ParticleKokkos*) particle;
+    particle_kk->sorted_kk = 0;
+  }
+
+  // sorting and particle reduction for stochastic particle weighting
+  if (swpmflag) {
+    ParticleKokkos* particle_kk = (ParticleKokkos*) particle;
+    particle_kk->sort_kokkos();
+    group_reduce(reduce);
     particle_kk->sorted_kk = 0;
   }
 

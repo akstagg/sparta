@@ -68,8 +68,6 @@ void CollideVSSKokkos::collisions_one_sw(COLLIDE_REDUCE &reduce)
   GridKokkos* grid_kk = (GridKokkos*) grid;
   grid_kk->sync(Device,CINFO_MASK);
   d_plist = grid_kk->d_plist;
-  d_pL = grid_kk->d_pL;
-  d_pLU = grid_kk->d_pLU;
 
   copymode = 1;
 
@@ -109,23 +107,204 @@ void CollideVSSKokkos::collisions_one_sw(COLLIDE_REDUCE &reduce)
     k_eiarray = particle_kk->k_eiarray;
   }
 
+  while (h_retry()) {
 
+    backup(); // conditional if we introduced a swpm_retry_flag
 
+    h_retry() = 0;
+    h_maxdelete() = maxdelete;
+    h_maxcellcount() = maxcellcount;
+    h_part_grow() = 0;
+    h_ndelete() = 0;
+    h_nlocal() = particle->nlocal;
 
+    Kokkos::deep_copy(d_scalars,h_scalars);
 
+    grid_kk_copy.copy(grid_kk);
 
+    if (sparta->kokkos->atomic_reduction) {
+      if (sparta->kokkos->need_atomics)
+        Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagCollideCollisionsOneSW<1> >(0,nglocal),*this);
+      else
+        Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagCollideCollisionsOneSW<0> >(0,nglocal),*this);
+    } else
+      Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType, TagCollideCollisionsOneSW<-1> >(0,nglocal),*this,reduce);
 
+    Kokkos::deep_copy(h_scalars,d_scalars);
 
+    if (h_retry()) {
+      //printf("Retrying, reason %i %i %i !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",h_maxdelete() > d_dellist.extent(0),h_maxcellcount() > d_plist.extent(1),h_part_grow());
 
-  if (sparta->kokkos->atomic_reduction) {
-    if (sparta->kokkos->need_atomics)
-      Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagCollideCollisionsOneSW<1> >(0,nglocal),*this);
-    else
-      Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagCollideCollisionsOneSW<0> >(0,nglocal),*this);
-  } else
-    Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType, TagCollideCollisionsOneSW<-1> >(0,nglocal),*this,reduce);
+      restore(); // conditional if we introduced a swpm_retry_flag (see collisions_one() logic for reactions)
 
-  Kokkos::deep_copy(h_scalars,d_scalars);
+      reduce = COLLIDE_REDUCE();
+
+      maxdelete = h_maxdelete();
+      if (d_dellist.extent(0) < maxdelete) {
+        memoryKK->destroy_kokkos(k_dellist,dellist);
+        memoryKK->grow_kokkos(k_dellist,dellist,maxdelete,"collide:dellist");
+        d_dellist = k_dellist.d_view;
+      }
+
+      maxcellcount = h_maxcellcount();
+      particle_kk->set_maxcellcount(maxcellcount);
+      if (d_plist.extent(1) < maxcellcount) {
+        d_plist = {};
+        Kokkos::resize(grid_kk->d_plist,nglocal,maxcellcount);
+        d_plist = grid_kk->d_plist;
+      }
+
+      auto nlocal_new = h_nlocal();
+      if (d_particles.extent(0) < nlocal_new) {
+        particle->grow(nlocal_new - particle->nlocal);
+        d_particles = particle_kk->k_particles.d_view;
+        k_eiarray = particle_kk->k_eiarray;
+      }
+    }
+  }
+
+  ndelete = h_ndelete();
+
+  particle->nlocal = h_nlocal();
+
+  copymode = 0;
+
+  if (h_error_flag())
+    error->one(FLERR,"Collision cell volume is zero");
+
+  particle_kk->modify(Device,PARTICLE_MASK);
+
+  d_particles = t_particle_1d(); // destroy reference to reduce memory use
+  d_plist = {};
+}
+
+void CollideVSSKokkos::group_reduce(COLLIDE_REDUCE &reduce)
+{
+  // loop over cells I own
+
+  ParticleKokkos* particle_kk = (ParticleKokkos*) particle;
+  particle_kk->sync(Device,PARTICLE_MASK|SPECIES_MASK);
+  if (vibstyle == DISCRETE) particle_kk->sync(Device,CUSTOM_MASK);
+  d_particles = particle_kk->k_particles.d_view;
+  d_species = particle_kk->k_species.d_view;
+  d_ewhich = particle_kk->k_ewhich.d_view;
+  k_eiarray = particle_kk->k_eiarray;
+
+  GridKokkos* grid_kk = (GridKokkos*) grid;
+  grid_kk->sync(Device,CINFO_MASK);
+  d_plist = grid_kk->d_plist;
+  d_pL = grid_kk->d_pL;
+  d_pLU = grid_kk->d_pLU;
+
+  copymode = 1;
+
+  /* ATOMIC_REDUCTION: 1 = use atomics
+                       0 = don't need atomics
+                      -1 = use parallel_reduce
+  */
+
+  // Stochastic weighting particle reduction may delete more particles than existing views can hold.
+  //  Cannot grow a Kokkos view in a parallel loop, so
+  //  if the capacity of the view is exceeded, break out of parallel loop,
+  //  reallocate on the host, and then repeat the parallel loop again.
+  //  Unfortunately this leads to really messy code.
+
+  h_retry() = 1;
+
+  double extra_factor = 1.1; // should we define a swpm_retry_flag?
+  auto maxdelete_extra = maxdelete*extra_factor;
+  if (d_dellist.extent(0) < maxdelete_extra) {
+    memoryKK->destroy_kokkos(k_dellist,dellist);
+    memoryKK->create_kokkos(k_dellist,dellist,maxdelete_extra,"collide:dellist");
+    d_dellist = k_dellist.d_view;
+  }
+
+  maxcellcount = particle_kk->get_maxcellcount();
+  auto maxcellcount_extra = maxcellcount*extra_factor;
+  if (d_plist.extent(1) < maxcellcount_extra) {
+    d_plist = {};
+    Kokkos::resize(grid_kk->d_plist,nglocal,maxcellcount_extra);
+    d_plist = grid_kk->d_plist;
+  }
+
+  auto nlocal_extra = particle->nlocal*extra_factor;
+  if (d_particles.extent(0) < nlocal_extra) {
+    particle->grow(nlocal_extra - particle->nlocal);
+    d_particles = particle_kk->k_particles.d_view;
+    k_eiarray = particle_kk->k_eiarray;
+  }
+
+  while (h_retry()) {
+
+    backup(); // conditional if we introduced a swpm_retry_flag
+
+    h_retry() = 0;
+    h_maxdelete() = maxdelete;
+    h_maxcellcount() = maxcellcount;
+    h_part_grow() = 0;
+    h_ndelete() = 0;
+    h_nlocal() = particle->nlocal;
+
+    Kokkos::deep_copy(d_scalars,h_scalars);
+
+    grid_kk_copy.copy(grid_kk);
+
+    if (sparta->kokkos->atomic_reduction) {
+      if (sparta->kokkos->need_atomics)
+        Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagCollideGroupReduce<1> >(0,nglocal),*this);
+      else
+        Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagCollideGroupReduce<0> >(0,nglocal),*this);
+    } else
+      Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType, TagCollideGroupReduce<-1> >(0,nglocal),*this,reduce);
+
+    Kokkos::deep_copy(h_scalars,d_scalars);
+
+    if (h_retry()) {
+      //printf("Retrying, reason %i %i %i !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",h_maxdelete() > d_dellist.extent(0),h_maxcellcount() > d_plist.extent(1),h_part_grow());
+
+      restore(); // conditional if we introduced a swpm_retry_flag (see collisions_one() logic for reactions)
+
+      reduce = COLLIDE_REDUCE();
+
+      maxdelete = h_maxdelete();
+      if (d_dellist.extent(0) < maxdelete) {
+        memoryKK->destroy_kokkos(k_dellist,dellist);
+        memoryKK->grow_kokkos(k_dellist,dellist,maxdelete,"collide:dellist");
+        d_dellist = k_dellist.d_view;
+      }
+
+      maxcellcount = h_maxcellcount();
+      particle_kk->set_maxcellcount(maxcellcount);
+      if (d_plist.extent(1) < maxcellcount) {
+        d_plist = {};
+        Kokkos::resize(grid_kk->d_plist,nglocal,maxcellcount);
+        d_plist = grid_kk->d_plist;
+      }
+
+      auto nlocal_new = h_nlocal();
+      if (d_particles.extent(0) < nlocal_new) {
+        particle->grow(nlocal_new - particle->nlocal);
+        d_particles = particle_kk->k_particles.d_view;
+        k_eiarray = particle_kk->k_eiarray;
+      }
+    }
+  }
+
+  ndelete = h_ndelete();
+
+  particle->nlocal = h_nlocal();
+
+  copymode = 0;
+
+  if (h_error_flag())
+    error->one(FLERR,"Collision cell volume is zero");
+
+  particle_kk->modify(Device,PARTICLE_MASK);
+
+  d_particles = t_particle_1d(); // destroy reference to reduce memory use
+  d_plist = {};
+  d_pL = {};
+  d_pLU = {};
 }
 
 template < int ATOMIC_REDUCTION >
@@ -464,3 +643,15 @@ int CollideVSSKokkos::split(double pre_wtf_kk,
   return newp;
 }
 
+template < int ATOMIC_REDUCTION >
+KOKKOS_INLINE_FUNCTION
+void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, const int &icell) const {
+  COLLIDE_REDUCE reduce;
+  this->template operator()< ATOMIC_REDUCTION >(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >(), icell, reduce);
+}
+
+template < int ATOMIC_REDUCTION >
+KOKKOS_INLINE_FUNCTION
+void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, const int &icell, COLLIDE_REDUCE &reduce) const {
+  ;
+}

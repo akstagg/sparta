@@ -61,6 +61,9 @@ template < int ATOMIC_REDUCTION >
 struct TagCollideCollisionsOneSW{};
 
 template < int ATOMIC_REDUCTION >
+struct TagCollideGroupReduce{};
+
+template < int ATOMIC_REDUCTION >
 struct TagCollideCollisionsOneAmbipolar{};
 
 class CollideVSSKokkos : public CollideVSS {
@@ -134,6 +137,14 @@ class CollideVSSKokkos : public CollideVSS {
   template < int ATOMIC_REDUCTION >
   KOKKOS_INLINE_FUNCTION
   void operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >, const int&, COLLIDE_REDUCE&) const;
+
+  template < int ATOMIC_REDUCTION >
+  KOKKOS_INLINE_FUNCTION
+  void operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, const int&) const;
+
+  template < int ATOMIC_REDUCTION >
+  KOKKOS_INLINE_FUNCTION
+  void operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, const int&, COLLIDE_REDUCE&) const;
 
   template < int ATOMIC_REDUCTION >
   KOKKOS_INLINE_FUNCTION
@@ -235,6 +246,7 @@ class CollideVSSKokkos : public CollideVSS {
   template < int NEARCP > void collisions_one(COLLIDE_REDUCE&);
   void collisions_one_sw(COLLIDE_REDUCE&);
   void collisions_one_ambipolar(COLLIDE_REDUCE&);
+  void group_reduce(COLLIDE_REDUCE&);
 
   // VSS specific
 
