@@ -198,6 +198,8 @@ void CollideVSSKokkos::group_reduce(COLLIDE_REDUCE &reduce)
   d_pL = grid_kk->d_pL;
   d_pLU = grid_kk->d_pLU;
 
+  boltz = update->boltz;
+
   copymode = 1;
 
   /* ATOMIC_REDUCTION: 1 = use atomics
@@ -672,7 +674,7 @@ void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, con
   while (n > Ncmax) {
     nold = n;
     if (group_type == BINARY) {
-      group_bt_kokkos(n,gbuf_kk);
+      group_bt_kokkos(n, gbuf_kk, icell);
     } else if (group_type == WEIGHT) {
       ;
     }
@@ -680,7 +682,7 @@ void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, con
 }
 
 KOKKOS_INLINE_FUNCTION
-void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk) const {
+void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, int icell) const {
 
   // ignore groups which have too few particles
   if (np <= Ngmin) return;
@@ -701,5 +703,134 @@ void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk) const {
   int ispecies;
   double mass, psw, pmsw, vp[3];
   double Erot;
-  
+  for (int p = 0; p < np; p++) {
+    ispecies = d_particles[d_plist(icell,p)].ispecies;
+    mass = d_species[ispecies].mass;
+    psw = d_particles[d_plist(icell,p)].weight;
+    pmsw = psw * mass;
+    memcpy(vp, d_particles[d_plist(icell,p)].v, 3*sizeof(double));
+    gsum += psw;
+    msum += pmsw;
+    Erot += psw*d_particles[d_plist(icell,p)].erot;
+    for (int i = 0; i < 3; i++) {
+      mV[i] += (pmsw*vp[i]);
+      for (int j = 0; j < 3; j++) {
+        mVV[i][j] += (pmsw*vp[i]*vp[j]);
+        mVVV[i][j] += (pmsw*vp[i]*vp[j]*vp[j]);
+      }
+    }
+  }
+
+  // mean velocity
+
+  double V[3];
+  for (int i = 0; i < 3; i++) V[i] = mV[i]/msum;
+
+  // stress tensor
+
+  double pij[3][3];
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++)
+      pij[i][j] = mVV[i][j] - mV[i]*mV[j]/msum;
+
+  // if group is small enough, merge the particles
+
+  if (np <= Ngmax+gbuf_kk) {
+
+    // temperature
+    double T = (pij[0][0] + pij[1][1] + pij[2][2])/
+      (3.0 * gsum * update->boltz);
+
+    // heat flux
+    double Vsq = V[0]*V[0] + V[1]*V[1] + V[2]*V[2];
+    double h,h1,h2,q[3];
+    int i1,i2;
+    for (int i = 0; i < 3; i++) {
+      if (i == 0) {
+        i1 = 1;
+        i2 = 2;
+      } else if (i == 1) {
+        i1 = 2;
+        i2 = 0;
+      } else {
+        i1 = 0;
+        i2 = 1;
+      }
+
+      h  = mVVV[i][i] - 3.0*mV[i]*mVV[i][i]/msum +
+           2.0*mV[i]*mV[i]*mV[i]/msum/msum;
+      h1 = mVVV[i][i1] - 2.0*mVV[i][i1]*mV[i1]/msum -
+           mV[i]*mVV[i1][i1]/msum + 2.0*mV[i]*mV[i1]*mV[i1]/msum/msum;
+      h2 = mVVV[i][i2] - 2.0*mVV[i][i2]*mV[i2]/msum -
+           mV[i]*mVV[i2][i2]/msum + 2.0*mV[i]*mV[i2]*mV[i2]/msum/msum;
+      q[i] = (h + h1 + h2) * 0.5;
+    }
+
+    // scale values to be consistent with definitions in
+    // .. stochastic numerics book
+
+    T *= boltz/mass;
+    for (int i = 0; i < 3; i++) {
+      q[i] /= mass;
+      for(int j = 0; j < 3; j++) pij[i][j] /= mass;
+    }
+#if 0
+    // reduce based on type
+    if (reduction_type == ENERGY) {
+      reduce(plist_leaf, np, gsum, V, T, Erot);
+    } else if (reduction_type == HEAT) {
+      reduce(plist_leaf, np, gsum, V, T, Erot, q);
+    } else if (reduction_type == STRESS) {
+      reduce(plist_leaf, np, gsum, V, T, Erot, q, pij);
+    }
+#endif
+  // group still too large so divide further
+
+  } else {
+
+    // Compute covariance matrix
+
+    double Rij[3][3];
+    for (int i = 0; i < 3; i++)
+      for (int j = 0; j < 3; j++)
+        Rij[i][j] = pij[i][j]/gsum;
+
+    // Find eigenpairs
+
+    double eval[3], evec[3][3];
+    //    int ierror = MathEigen::jacobi3(Rij,eval,evec);
+
+    // Find largest eigenpair
+
+    double maxeval;
+    double maxevec[3]; // normal of splitting plane
+
+    maxeval = 0;
+    for (int i = 0; i < 3; i++) {
+      if (fabs(eval[i]) > maxeval) {
+        maxeval = std::abs(eval[i]);
+        for (int j = 0; j < 3; j++) {
+          maxevec[j] = evec[j][i];
+        }
+      }
+    }
+    // Separate based on particle velocity
+
+    double center = V[0]*maxevec[0] + V[1]*maxevec[1] + V[2]*maxevec[2];
+    int pid, pidL[np], pidR[np];
+    int npL, npR;
+    npL = npR = 0;
+#if 0
+    for (int i = 0; i < np; i++) {
+      pid = plist_leaf[i];
+      ipart = &particles[pid];
+      if (MathExtra::dot3(ipart->v,maxevec) < center)
+        pidL[npL++] = pid;
+      else
+        pidR[npR++] = pid;
+    }
+    if(npL > Ngmin) group_bt_kokkos(pidL,npL,icell); // need to pass particle list above
+    if(npR > Ngmin) group_bt_kokkos(pidR,npR,icell);
+#endif
+  }
 }
