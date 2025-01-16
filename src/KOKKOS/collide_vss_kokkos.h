@@ -117,7 +117,16 @@ class CollideVSSKokkos : public CollideVSS {
             Particle::OnePart *&) const;
 
   KOKKOS_INLINE_FUNCTION
-  void group_bt_kokkos(int, double, int) const;
+  void group_bt_kokkos(int, double, rand_type &, int) const;
+
+  KOKKOS_INLINE_FUNCTION
+  void reduce_kokkos(double, double *, double, double, int, rand_type &) const;
+
+  KOKKOS_INLINE_FUNCTION
+  void reduce_kokkos(double, double *, double, double, double *, int, rand_type &) const;
+
+  KOKKOS_INLINE_FUNCTION
+  void reduce_kokkos(double, double *, double, double, double *, double [3][3], int, rand_type &) const;
 
   KOKKOS_INLINE_FUNCTION
   void operator()(TagCollideResetVremax, const int&) const;

@@ -411,7 +411,7 @@ void Collide::group_reduce()
       }
 
       // if no particles reduced, increase group size
-      
+
       if (n == nold) gbuf += 2;
       if (gbuf > n) break;
 
@@ -450,7 +450,7 @@ void Collide::group_bt(int *plist_leaf, int np)
   // find maximum particle weight
 
   int ispecies;
-	double mass, psw, pmsw, vp[3];
+    double mass, psw, pmsw, vp[3];
   double Erot;
   for (int p = 0; p < np; p++) {
     ipart = &particles[plist_leaf[p]];
@@ -460,7 +460,7 @@ void Collide::group_bt(int *plist_leaf, int np)
     psw = ipart->weight;
     pmsw = psw * mass;
     memcpy(vp, ipart->v, 3*sizeof(double));
-   	gsum += psw;
+    gsum += psw;
     msum += pmsw;
     Erot += psw*ipart->erot;
     for (int i = 0; i < 3; i++) {
@@ -474,7 +474,7 @@ void Collide::group_bt(int *plist_leaf, int np)
 
   // mean velocity
 
-	double V[3];
+    double V[3];
   for (int i = 0; i < 3; i++) V[i] = mV[i]/msum;
 
   // stress tensor
@@ -561,7 +561,7 @@ void Collide::group_bt(int *plist_leaf, int np)
       if (std::abs(eval[i]) > maxeval) {
         maxeval = std::abs(eval[i]);
         for (int j = 0; j < 3; j++) {
-          maxevec[j] = evec[j][i];  
+          maxevec[j] = evec[j][i];
         }
       }
     }
@@ -690,7 +690,7 @@ void Collide::reduce(int *pleaf, int np,
       if (random->uniform() < 0.5) uvec[d] = A * cos(phi);
       else uvec[d] = A * sin(phi);
     }
-  } else 
+  } else
     for (int d = 0; d < 3; d++) uvec[d] = q[d]/qmag;
 
   // set reduced particle velocities
@@ -797,7 +797,7 @@ void Collide::reduce(int *pleaf, int np,
     jpart->weight = jsw;
 
   } // end nK
-  
+
   // delete other particles
   for (int i = 0; i < np; i++) {
     if (i < 2*nK) continue;
@@ -864,4 +864,3 @@ void Collide::remove_tiny()
 
   return;
 }
-

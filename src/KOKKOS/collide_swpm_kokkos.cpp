@@ -42,14 +42,10 @@ enum{CONSTANT,VARIABLE};
 enum{ENERGY,HEAT,STRESS}; // particle reduction choices
 enum{BINARY,WEIGHT}; // grouping choices
 
-#define DELTAGRID 1000            // must be bigger than split cells per cell
 #define DELTADELETE 1024
-#define DELTAELECTRON 128
 #define DELTACELLCOUNT 2
-
-#define MAXLINE 1024
 #define BIG 1.0e20
-
+#define SMALL 1.0e-16
 
 /* ----------------------------------------------------------------------
    Stochastic weighted algorithm
@@ -662,6 +658,11 @@ void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, con
   int np = grid_kk_copy.obj.d_cellcount[icell];
   if (np <= Ncmax) return;
 
+  struct State precoln;       // state before collision
+  struct State postcoln;      // state after collision
+
+  rand_type rand_gen = rand_pool.get_state();
+
   int n = 0;
   for (int num = 0; num < np; num++) {
     double isw = d_particles[d_plist(icell,num)].weight;
@@ -674,15 +675,17 @@ void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, con
   while (n > Ncmax) {
     nold = n;
     if (group_type == BINARY) {
-      group_bt_kokkos(n, gbuf_kk, icell);
+      group_bt_kokkos(n, gbuf_kk, rand_gen, icell);
     } else if (group_type == WEIGHT) {
       ;
     }
   }
+
+  rand_pool.free_state(rand_gen);
 }
 
 KOKKOS_INLINE_FUNCTION
-void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, int icell) const {
+void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, rand_type &rand_gen, int icell) const {
 
   // ignore groups which have too few particles
   if (np <= Ngmin) return;
@@ -774,16 +777,16 @@ void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, int icell) const 
       q[i] /= mass;
       for(int j = 0; j < 3; j++) pij[i][j] /= mass;
     }
-#if 0
+
     // reduce based on type
     if (reduction_type == ENERGY) {
-      reduce(plist_leaf, np, gsum, V, T, Erot);
+      reduce_kokkos(gsum, V, T, Erot, icell, rand_gen);
     } else if (reduction_type == HEAT) {
-      reduce(plist_leaf, np, gsum, V, T, Erot, q);
+      reduce_kokkos(gsum, V, T, Erot, q, icell, rand_gen);
     } else if (reduction_type == STRESS) {
-      reduce(plist_leaf, np, gsum, V, T, Erot, q, pij);
+      reduce_kokkos(gsum, V, T, Erot, q, pij, icell, rand_gen);
     }
-#endif
+
   // group still too large so divide further
 
   } else {
@@ -834,3 +837,217 @@ void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, int icell) const 
 #endif
   }
 }
+
+KOKKOS_INLINE_FUNCTION
+void CollideVSSKokkos::reduce_kokkos(double rho, double *V, double T, double Erot,
+                                     int icell, rand_type &rand_gen) const {
+  // some type of d_plist_thing will likely be accessed by particle counter and cell, and some other
+  // indices will be used to indicate the sublist sections of this thing.
+
+  int np; // some number of particles !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  const int ip = np * rand_gen.drand();
+  int jp = np * rand_gen.drand();
+  while (ip == jp) jp = np * rand_gen.drand();
+
+  Particle::OnePart* ipart = &d_particles[d_plist(icell,ip)];
+  Particle::OnePart* jpart = &d_particles[d_plist(icell,jp)];
+
+  // find direction of velocity wrt CoM frame
+
+  double theta = 2.0 * 3.14159 * rand_gen.drand();
+  double phi = acos(1.0 - 2.0 * rand_gen.drand());
+  double uvec[3];
+  uvec[0] = sin(phi) * cos(theta);
+  uvec[1] = sin(phi) * sin(theta);
+  uvec[2] = cos(phi);
+
+  // set reduced particle velocities
+
+  double sqT = sqrt(3.0*T);
+  for (int d = 0; d < 3; d++) {
+    ipart->v[d] = V[d] + sqT*uvec[d];
+    jpart->v[d] = V[d] - sqT*uvec[d];
+  }
+
+  // set reduced particle rotational energies
+
+  ipart->erot = Erot/(rho*0.5)*0.5;
+  jpart->erot = Erot/(rho*0.5)*0.5;
+
+  // set reduced particle weights
+
+  ipart->weight = rho*0.5;
+  jpart->weight = rho*0.5;
+
+  // delete other particles
+  for (int i = 0; i<np; i++) { // loop over the particle list, however that is defined.  AKS
+    if (i == ip || i == jp) continue;
+    int ndelete = Kokkos::atomic_fetch_add(&d_ndelete(),1);
+    if (ndelete < d_dellist.extent(0)) {
+      d_dellist(ndelete) = d_plist(icell,i);
+      d_particles[d_plist(icell, i)].weight = -1.0;
+    } else {
+      d_retry() = 1;
+      d_maxdelete() += DELTADELETE;
+      return;
+    }
+  }
+  return;
+}
+
+KOKKOS_INLINE_FUNCTION
+void CollideVSSKokkos::reduce_kokkos(double rho, double *V, double T, double Erot,
+                                     double *q, int icell, rand_type &rand_gen) const {
+  // some type of d_plist_thing will likely be accessed by particle counter and cell, and some other
+  // indices will be used to indicate the sublist sections of this thing.
+
+  int np; // some number of particles !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  const int ip = np * rand_gen.drand();
+  int jp = np * rand_gen.drand();
+  while (ip == jp) jp = np * rand_gen.drand();
+
+  Particle::OnePart* ipart = &d_particles[d_plist(icell,ip)];
+  Particle::OnePart* jpart = &d_particles[d_plist(icell,jp)];
+
+  // precompute
+
+  double sqT = sqrt(3.0*T);
+  double qmag = sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2]);
+  double qge = qmag / (rho * pow(sqT,3.0));
+  double itheta = qge + sqrt(1.0 + qge*qge);
+  double alpha = sqT*itheta;
+  double beta = sqT/itheta;
+
+  // find direction of velocity wrt CoM frame
+
+  double uvec[3];
+  if (qmag < SMALL) {
+    for (int d = 0; d < 3; d++) {
+      double A = sqrt(-log(rand_gen.drand()));
+      double phi = 6.283185308 * rand_gen.drand();
+      if (rand_gen.drand() < 0.5) uvec[d] = A * cos(phi);
+      else uvec[d] = A * sin(phi);
+    }
+  } else
+    for (int d = 0; d < 3; d++) uvec[d] = q[d]/qmag;
+
+  // set reduced particle velocities
+
+  for (int d = 0; d < 3; d++) {
+    ipart->v[d] = V[d] + alpha*uvec[d];
+    jpart->v[d] = V[d] - beta*uvec[d];
+  }
+
+  // set reduced particle weights
+
+  double isw = rho/(1.0+itheta*itheta);
+  double jsw = rho - isw;
+
+  // set reduced particle rotational energies
+
+  ipart->erot = Erot/isw*0.5;
+  jpart->erot = Erot/jsw*0.5;
+
+  ipart->weight = isw;
+  jpart->weight = jsw;
+
+  // delete other particles
+  for (int i = 0; i<np; i++) { // loop over the particle list, however that is defined.  AKS
+    if (i == ip || i == jp) continue;
+    int ndelete = Kokkos::atomic_fetch_add(&d_ndelete(),1);
+    if (ndelete < d_dellist.extent(0)) {
+      d_dellist(ndelete) = d_plist(icell,i);
+      d_particles[d_plist(icell, i)].weight = -1.0;
+    } else {
+      d_retry() = 1;
+      d_maxdelete() += DELTADELETE;
+      return;
+    }
+  }
+  return;
+}
+
+KOKKOS_INLINE_FUNCTION
+void CollideVSSKokkos::reduce_kokkos(double rho, double *V, double T, double Erot,
+                                     double *q, double pij[3][3], int icell, rand_type &rand_gen) const {
+
+  // some type of d_plist_thing will likely be accessed by particle counter and cell, and some other
+  // indices will be used to indicate the sublist sections of this thing.
+
+  int np; // some number of particles !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  // find eigenpairs of stress tensor
+
+  double eval[3], evec[3][3];
+  //  int ierror = MathEigen::jacobi3(pij,eval,evec);
+
+  // find number of non-zero eigenvalues
+
+  int nK = 0;
+  for (int i = 0; i < 3; i++) {
+    if (fabs(eval[i]) >= SMALL && eval[i] > 0) {
+      eval[nK] = eval[i];
+      for (int d = 0; d < 3; d++) evec[nK][d] = evec[i][d];
+      nK++;
+    }
+  }
+
+  // iterate through nK pairs
+  Particle::OnePart *ipart, *jpart;
+  double qli, itheta;
+  double isw, jsw;
+  double uvec[3];
+
+  for (int iK = 0; iK < nK; iK++) {
+
+    // reduced particles chosen as first two
+    ipart = &d_particles[d_plist(icell,2*iK)];
+    jpart = &d_particles[d_plist(icell,2*iK+1)];
+
+    qli = evec[0][iK]*q[0] + evec[1][iK]*q[1] + evec[2][iK]*q[2];
+    if (qli < 0)
+      for (int d = 0; d < 3; d++) evec[d][iK] *= -1.0;
+    qli = fabs(qli);
+
+    itheta = sqrt(rho) * qli / (sqrt(nK) * pow(eval[iK],1.5))
+      + sqrt(1.0 + (rho*qli*qli)/(nK*pow(eval[iK],3.0)));
+
+    // set reduced particle velocities
+    for (int d = 0; d < 3; d++) {
+      ipart->v[d] = V[d] + itheta*sqrt(nK*eval[iK]/rho)*evec[d][iK];
+      jpart->v[d] = V[d] - 1.0/itheta*sqrt(nK*eval[iK]/rho)*evec[d][iK];
+    }
+
+    // set reduced particle weights
+
+    isw = rho/(nK*(1.0+itheta*itheta));
+    jsw = rho/nK - isw;
+
+    // set reduced particle rotational energies
+
+    ipart->erot = Erot/isw*0.5/nK;
+    jpart->erot = Erot/jsw*0.5/nK;
+
+    ipart->weight = isw;
+    jpart->weight = jsw;
+  }
+
+  // delete other particles
+  for (int i = 0; i<np; i++) { // loop over the particle list, however that is defined.  AKS
+    if (i < 2*nK) continue;
+    int ndelete = Kokkos::atomic_fetch_add(&d_ndelete(),1);
+    if (ndelete < d_dellist.extent(0)) {
+      d_dellist(ndelete) = d_plist(icell,i);
+      d_particles[d_plist(icell, i)].weight = -1.0;
+    } else {
+      d_retry() = 1;
+      d_maxdelete() += DELTADELETE;
+      return;
+    }
+  }
+  return;
+}
+
+// don't forget logic to return from multiple functions if allocation needs to be redone: AKS
