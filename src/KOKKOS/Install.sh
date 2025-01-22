@@ -47,7 +47,6 @@ fi
 
 action collide_vss_kokkos.cpp
 action collide_vss_kokkos.h
-action collide_swpm_kokkos.cpp
 action compute_boundary_kokkos.cpp
 action compute_boundary_kokkos.h
 action compute_count_kokkos.cpp
