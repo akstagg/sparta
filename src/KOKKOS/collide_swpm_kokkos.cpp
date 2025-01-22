@@ -33,6 +33,7 @@
 #include "modify.h"
 #include "fix.h"
 #include "fix_ambipolar.h"
+#include "math_eigen_kokkos.h"
 
 using namespace SPARTA_NS;
 using namespace MathConst;
@@ -801,7 +802,7 @@ void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, rand_type &rand_g
     // Find eigenpairs
 
     double eval[3], evec[3][3];
-    //    int ierror = MathEigen::jacobi3(Rij,eval,evec);
+    int ierror = MathEigenKokkos::jacobi3_kokkos(Rij,eval,evec);
 
     // Find largest eigenpair
 
@@ -811,7 +812,7 @@ void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, rand_type &rand_g
     maxeval = 0;
     for (int i = 0; i < 3; i++) {
       if (fabs(eval[i]) > maxeval) {
-        maxeval = std::abs(eval[i]);
+        maxeval = fabs(eval[i]);
         for (int j = 0; j < 3; j++) {
           maxevec[j] = evec[j][i];
         }
@@ -976,12 +977,12 @@ void CollideVSSKokkos::reduce_kokkos(double rho, double *V, double T, double Ero
   // some type of d_plist_thing will likely be accessed by particle counter and cell, and some other
   // indices will be used to indicate the sublist sections of this thing.
 
-  int np; // some number of particles !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  int np; // some number of particles !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! AKS
 
   // find eigenpairs of stress tensor
 
   double eval[3], evec[3][3];
-  //  int ierror = MathEigen::jacobi3(pij,eval,evec);
+  int ierror = MathEigenKokkos::jacobi3_kokkos(pij,eval,evec);
 
   // find number of non-zero eigenvalues
 
