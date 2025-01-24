@@ -2841,9 +2841,12 @@ void CollideVSSKokkos::operator()(TagCollideCollisionsOneSW< ATOMIC_REDUCTION >,
   int count = 0;
   for (int n = 0; n < np; n++) {
     double isw = d_particles[d_plist(icell,n)].weight;
-    if (isw > 0.) sw_mean += isw;
+    if (isw > 0.) {
+      sw_mean += isw;
+      count++;
+    }
   }
-  sw_mean /= np;
+  sw_mean /= count;
 
   for (int n = 0; n < np; n++) {
     double isw = d_particles[d_plist(icell,n)].weight;
@@ -3086,14 +3089,47 @@ void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, con
       n++;
   }
 
+  double d1, d2;
+  double swmean, swvar, swstd;
+  double lLim, uLim;
+  int npL, npLU;
   int nold;
   double gbuf_kk = 0;
   while (n > Ncmax) {
     nold = n;
     if (group_type == BINARY) {
       group_bt_kokkos(n, gbuf_kk, rand_gen, icell);
+      if (d_retry()) {
+        rand_pool.free_state(rand_gen);
+        return;
+      }
     } else if (group_type == WEIGHT) {
-      ;
+
+      // find mean / standard deviation of weight
+      swmean = 0.0;
+      swvar = 0.0;
+      n = 0;
+      for (int pidx = 0; pidx < np; pidx++) {
+        double isw = d_particles[d_plist(icell,pidx)].weight;
+
+        // incremental variance
+        if (isw > 0.) {
+          n++;
+          d1 = isw - swmean;
+          swmean += (d1/n);
+          swvar += (n-1.0)/n*d1*d1;
+        }
+      }
+      swstd = sqrt(swvar/n);
+
+      lLim = MAX(swmean-1.25*swstd,0);
+      uLim = swmean+2.0*swstd;
+
+      // recreate particle list and omit large weighted particles
+
+      //......stopped here (depends on Andrew's upcoming changes: AKS
+
+
     }
   }
 
@@ -3104,7 +3140,7 @@ KOKKOS_INLINE_FUNCTION
 void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, rand_type &rand_gen, int icell) const {
 
   // ignore groups which have too few particles
-  if (np <= Ngmin) return;
+  if (np <= Ngmin || d_retry()) return;
 
   // compute stress tensor since it's needed for
   // .. further dividing and reduction
@@ -3239,18 +3275,18 @@ void CollideVSSKokkos::group_bt_kokkos(int np, double gbuf_kk, rand_type &rand_g
     int pid, pidL[np], pidR[np];
     int npL, npR;
     npL = npR = 0;
-#if 0
-    for (int i = 0; i < np; i++) {
-      pid = plist_leaf[i];
-      ipart = &particles[pid];
-      if (MathExtra::dot3(ipart->v,maxevec) < center)
-        pidL[npL++] = pid;
-      else
-        pidR[npR++] = pid;
-    }
-    if(npL > Ngmin) group_bt_kokkos(pidL,npL,icell); // need to pass particle list above
-    if(npR > Ngmin) group_bt_kokkos(pidR,npR,icell);
-#endif
+
+    // need to redo this based on Andrew's particle reduction data structure changes:  AKS
+    //    for (int i = 0; i < np; i++) {
+      //      pid = plist_leaf[i];
+      //      ipart = &particles[pid];
+      //      if (MathExtraKokkos::dot3(ipart->v,maxevec) < center)
+      //        pidL[npL++] = pid;
+      //      else
+      //        pidR[npR++] = pid;
+      //    }
+      //    if(npL > Ngmin) group_bt_kokkos(pidL,npL,icell); // need to pass particle list above: AKS
+      //    if(npR > Ngmin) group_bt_kokkos(pidR,npR,icell);
   }
 }
 
@@ -3466,4 +3502,3 @@ void CollideVSSKokkos::reduce_kokkos(double rho, double *V, double T, double Ero
   return;
 }
 
-// don't forget logic to return from multiple functions if allocation needs to be redone: AKS
