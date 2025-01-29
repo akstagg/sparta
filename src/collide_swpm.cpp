@@ -318,14 +318,12 @@ void Collide::group_reduce()
 
   Particle::OnePart *ipart;
   Grid::ChildInfo *cinfo = grid->cinfo;
-  Grid::ChildCell *cells = grid->cells;
   Particle::OnePart *particles = particle->particles;
   int *next = particle->next;
 
   double swmean, swvar, swstd;
   double d1, d2;
   double lLim, uLim;
-  int npL, npLU;
 
   for (int icell = 0; icell < nglocal; icell++) {
     np = cinfo[icell].count;
@@ -333,6 +331,7 @@ void Collide::group_reduce()
     if (np <= Ncmax) continue;
 
     // create particle list
+    // negative weights ones are the tiny ones remove before
 
     ip = cinfo[icell].first;
     n = 0;
@@ -351,7 +350,7 @@ void Collide::group_reduce()
       // seems to be more stable than weighted
 
       if (group_type == BINARY) {
-        group_bt(plist,n);
+        group_bt(0,n);
       } else if (group_type == WEIGHT) {
 
         // find mean / standard deviation of weight
@@ -383,19 +382,23 @@ void Collide::group_reduce()
         // recreate particle list and omit large weighted particles
 
         ip = cinfo[icell].first;
-        npL = npLU = 0;
+        int cp = 0; // index of center particle
+        int np_red = 0; // number of particles to reduce
         while (ip >= 0) {
           ipart = &particles[ip];
           isw = ipart->weight;
-          if(isw > 0 && isw < lLim) pL[npL++] = ip;
-          else if(isw >= lLim && isw < uLim) pLU[npLU++] = ip;
+          if(isw > 0 && isw < lLim) {
+            std::swap(plist[ip],plist[cp]);
+            cp++;
+            np_red++;
+          } else if (isw > 0 && isw < uLim) np_red++;
           ip = next[ip];
         }
 
         // can reuse binary tree division here
 
-        group_bt(pL,  npL);
-        group_bt(pLU, npLU);
+        group_bt(0, cp);
+        group_bt(cp, np_red);
 
       }
 
@@ -411,7 +414,7 @@ void Collide::group_reduce()
       }
 
       // if no particles reduced, increase group size
-
+      
       if (n == nold) gbuf += 2;
       if (gbuf > n) break;
 
@@ -424,7 +427,7 @@ void Collide::group_reduce()
 /* ----------------------------------------------------------------------
    Recursivley divides particles using the binary tree strategy
 ------------------------------------------------------------------------- */
-void Collide::group_bt(int *plist_leaf, int np)
+void Collide::group_bt(int istart, int iend)
 {
   Particle::OnePart *ipart;
   Particle::OnePart *particles = particle->particles;
@@ -432,6 +435,8 @@ void Collide::group_bt(int *plist_leaf, int np)
 
   // ignore groups which have too few particles
 
+  // loops don't include iend
+  int np = iend-istart;
   if (np <= Ngmin) return;
 
   // compute stress tensor since it's needed for
@@ -450,17 +455,17 @@ void Collide::group_bt(int *plist_leaf, int np)
   // find maximum particle weight
 
   int ispecies;
-    double mass, psw, pmsw, vp[3];
+	double mass, psw, pmsw, vp[3];
   double Erot;
-  for (int p = 0; p < np; p++) {
-    ipart = &particles[plist_leaf[p]];
+  for (int p = istart; p < iend; p++) {
+    ipart = &particles[plist[p]];
     ispecies = ipart->ispecies;
     mass = species[ispecies].mass;
 
     psw = ipart->weight;
     pmsw = psw * mass;
     memcpy(vp, ipart->v, 3*sizeof(double));
-    gsum += psw;
+   	gsum += psw;
     msum += pmsw;
     Erot += psw*ipart->erot;
     for (int i = 0; i < 3; i++) {
@@ -474,7 +479,7 @@ void Collide::group_bt(int *plist_leaf, int np)
 
   // mean velocity
 
-    double V[3];
+	double V[3];
   for (int i = 0; i < 3; i++) V[i] = mV[i]/msum;
 
   // stress tensor
@@ -528,11 +533,11 @@ void Collide::group_bt(int *plist_leaf, int np)
 
     // reduce based on type
     if (reduction_type == ENERGY) {
-      reduce(plist_leaf, np, gsum, V, T, Erot);
+      reduce(istart, iend, gsum, V, T, Erot);
     } else if (reduction_type == HEAT) {
-      reduce(plist_leaf, np, gsum, V, T, Erot, q);
+      reduce(istart, iend, gsum, V, T, Erot, q);
     } else if (reduction_type == STRESS) {
-      reduce(plist_leaf, np, gsum, V, T, Erot, q, pij);
+      reduce(istart, iend, gsum, V, T, Erot, q, pij);
     }
 
   // group still too large so divide further
@@ -561,7 +566,7 @@ void Collide::group_bt(int *plist_leaf, int np)
       if (std::abs(eval[i]) > maxeval) {
         maxeval = std::abs(eval[i]);
         for (int j = 0; j < 3; j++) {
-          maxevec[j] = evec[j][i];
+          maxevec[j] = evec[j][i];  
         }
       }
     }
@@ -569,20 +574,17 @@ void Collide::group_bt(int *plist_leaf, int np)
     // Separate based on particle velocity
 
     double center = V[0]*maxevec[0] + V[1]*maxevec[1] + V[2]*maxevec[2];
-    int pid, pidL[np], pidR[np];
-    int npL, npR;
-    npL = npR = 0;
-    for (int i = 0; i < np; i++) {
-      pid = plist_leaf[i];
-      ipart = &particles[pid];
-      if (MathExtra::dot3(ipart->v,maxevec) < center)
-        pidL[npL++] = pid;
-      else
-        pidR[npR++] = pid;
+    int cp = 0; // center particle
+    for (int i = istart; i < iend; i++) {
+      ipart = &particles[plist[i]];
+      if (MathExtra::dot3(ipart->v,maxevec) < center) {
+        std::swap(plist[cp+istart],plist[i]);
+        cp++;
+      }
     }
 
-    if(npL > Ngmin) group_bt(pidL,npL);
-    if(npR > Ngmin) group_bt(pidR,npR);
+    if(cp > Ngmin) group_bt(istart,istart+cp);
+    if(np-cp > Ngmin) group_bt(istart+cp,iend);
   }
 
   return;
@@ -591,7 +593,7 @@ void Collide::group_bt(int *plist_leaf, int np)
 /* ----------------------------------------------------------------------
    Merge particles using energy scheme
 ------------------------------------------------------------------------- */
-void Collide::reduce(int *pleaf, int np,
+void Collide::reduce(int istart, int iend, 
                      double rho, double *V, double T, double Erot)
 {
 
@@ -600,13 +602,14 @@ void Collide::reduce(int *pleaf, int np,
   Particle::OnePart *particles = particle->particles;
   Particle::OnePart *ipart, *jpart;
 
+  int np = iend-istart;
   int ip, jp;
-  ip = np * random->uniform();
-  jp = np * random->uniform();
-  while (ip == jp) jp = np * random->uniform();
+  ip = np * random->uniform() + istart;
+  jp = np * random->uniform() + istart;
+  while (ip == jp) jp = np * random->uniform() + istart;
 
-  ipart = &particles[pleaf[ip]];
-  jpart = &particles[pleaf[jp]];
+  ipart = &particles[plist[ip]];
+  jpart = &particles[plist[jp]];
 
   // find direction of velocity wrt CoM frame
 
@@ -637,15 +640,15 @@ void Collide::reduce(int *pleaf, int np,
 
   // delete other particles
 
-  for (int i = 0; i < np; i++) {
+  for (int i = istart; i < iend; i++) {
     if (i == ip || i == jp) continue;
     if (ndelete == maxdelete) {
       maxdelete += DELTADELETE;
       memory->grow(dellist,maxdelete,"collide:dellist");
     }
-    ipart = &particles[pleaf[i]];
+    ipart = &particles[plist[i]];
     ipart->weight = -1.0;
-    dellist[ndelete++] = pleaf[i];
+    dellist[ndelete++] = plist[i];
   }
 
   return;
@@ -654,7 +657,7 @@ void Collide::reduce(int *pleaf, int np,
 /* ----------------------------------------------------------------------
    Merge particles using heat flux scheme
 ------------------------------------------------------------------------- */
-void Collide::reduce(int *pleaf, int np,
+void Collide::reduce(int istart, int iend,
                      double rho, double *V, double T, double Erot, double *q)
 {
 
@@ -663,13 +666,14 @@ void Collide::reduce(int *pleaf, int np,
   Particle::OnePart *particles = particle->particles;
   Particle::OnePart *ipart, *jpart;
 
+  int np = iend-istart;
   int ip, jp;
-  ip = np * random->uniform();
-  jp = np * random->uniform();
-  while (ip == jp) jp = np * random->uniform();
+  ip = np * random->uniform() + istart;
+  jp = np * random->uniform() + istart;
+  while (ip == jp) jp = np * random->uniform() + istart;
 
-  ipart = &particles[pleaf[ip]];
-  jpart = &particles[pleaf[jp]];
+  ipart = &particles[plist[ip]];
+  jpart = &particles[plist[jp]];
 
   // precompute
 
@@ -690,7 +694,7 @@ void Collide::reduce(int *pleaf, int np,
       if (random->uniform() < 0.5) uvec[d] = A * cos(phi);
       else uvec[d] = A * sin(phi);
     }
-  } else
+  } else 
     for (int d = 0; d < 3; d++) uvec[d] = q[d]/qmag;
 
   // set reduced particle velocities
@@ -714,15 +718,15 @@ void Collide::reduce(int *pleaf, int np,
   jpart->weight = jsw;
 
   // delete other particles
-  for (int i = 0; i < np; i++) {
+  for (int i = istart; i < iend; i++) {
     if (i == ip || i == jp) continue;
     if (ndelete == maxdelete) {
       maxdelete += DELTADELETE;
       memory->grow(dellist,maxdelete,"collide:dellist");
     }
-    ipart = &particles[pleaf[i]];
+    ipart = &particles[plist[i]];
     ipart->weight = -1.0;
-    dellist[ndelete++] = pleaf[i];
+    dellist[ndelete++] = plist[i];
   }
 
   return;
@@ -731,7 +735,7 @@ void Collide::reduce(int *pleaf, int np,
 /* ----------------------------------------------------------------------
    Merge particles using stress scheme
 ------------------------------------------------------------------------- */
-void Collide::reduce(int *pleaf, int np,
+void Collide::reduce(int istart, int iend,
                      double rho, double *V, double T, double Erot,
                      double *q, double pij[3][3])
 {
@@ -765,8 +769,8 @@ void Collide::reduce(int *pleaf, int np,
 
     // reduced particles chosen as first two
 
-    ipart = &particles[pleaf[2*iK]];
-    jpart = &particles[pleaf[2*iK+1]];
+    ipart = &particles[plist[2*iK+istart]];
+    jpart = &particles[plist[2*iK+1+istart]];
 
     qli = evec[0][iK]*q[0] + evec[1][iK]*q[1] + evec[2][iK]*q[2];
     if (qli < 0)
@@ -797,17 +801,17 @@ void Collide::reduce(int *pleaf, int np,
     jpart->weight = jsw;
 
   } // end nK
-
+  
   // delete other particles
-  for (int i = 0; i < np; i++) {
+  for (int i = istart; i < iend; i++) {
     if (i < 2*nK) continue;
     if (ndelete == maxdelete) {
       maxdelete += DELTADELETE;
       memory->grow(dellist,maxdelete,"collide:dellist");
     }
-    ipart = &particles[pleaf[i]];
+    ipart = &particles[plist[i+istart]];
     ipart->weight = -1.0;
-    dellist[ndelete++] = pleaf[i];
+    dellist[ndelete++] = plist[i+istart];
   }
 
   return;
@@ -836,8 +840,8 @@ void Collide::remove_tiny()
       ipart = &particles[ip];
       isw = ipart->weight;
       if (isw > 0) {
-        sw_mean += isw;
-        n++;
+	      sw_mean += isw;
+	      n++;
       }
       ip = next[ip];
     }
@@ -864,3 +868,4 @@ void Collide::remove_tiny()
 
   return;
 }
+
