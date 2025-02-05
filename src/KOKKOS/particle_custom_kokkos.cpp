@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -89,7 +89,7 @@ int ParticleKokkos::add_custom(char *name, int type, int size)
       eivec = (int **)
         memory->srealloc(eivec,ncustom_ivec*sizeof(int *),"particle:eivec");
       eivec[ncustom_ivec-1] = NULL;
-      k_eivec.resize(ncustom_ivec);
+      k_eivec.resize(Kokkos::view_alloc(Kokkos::SequentialHostInit),ncustom_ivec);
       memory->grow(icustom_ivec,ncustom_ivec,"particle:icustom_ivec");
       icustom_ivec[ncustom_ivec-1] = index;
     } else {
@@ -98,7 +98,7 @@ int ParticleKokkos::add_custom(char *name, int type, int size)
         memory->srealloc(eiarray,ncustom_iarray*sizeof(int **),
                          "particle:eiarray");
       eiarray[ncustom_iarray-1] = NULL;
-      k_eiarray.resize(ncustom_iarray);
+      k_eiarray.resize(Kokkos::view_alloc(Kokkos::SequentialHostInit),ncustom_iarray);
       memory->grow(icustom_iarray,ncustom_iarray,"particle:icustom_iarray");
       icustom_iarray[ncustom_iarray-1] = index;
       memoryKK->grow_kokkos(k_eicol,eicol,ncustom_iarray,"particle:eicol");
@@ -110,7 +110,7 @@ int ParticleKokkos::add_custom(char *name, int type, int size)
       edvec = (double **)
         memory->srealloc(edvec,ncustom_dvec*sizeof(double *),"particle:edvec");
       edvec[ncustom_dvec-1] = NULL;
-      k_edvec.resize(ncustom_dvec);
+      k_edvec.resize(Kokkos::view_alloc(Kokkos::SequentialHostInit),ncustom_dvec);
       memory->grow(icustom_dvec,ncustom_dvec,"particle:icustom_dvec");
       icustom_dvec[ncustom_dvec-1] = index;
     } else {
@@ -119,7 +119,8 @@ int ParticleKokkos::add_custom(char *name, int type, int size)
         memory->srealloc(edarray,ncustom_darray*sizeof(double **),
                          "particle:edarray");
       edarray[ncustom_darray-1] = NULL;
-      k_edarray.resize(ncustom_darray);
+      auto h_edarray = k_edarray.h_view;
+      k_edarray.resize(Kokkos::view_alloc(Kokkos::SequentialHostInit),ncustom_darray);
       memory->grow(icustom_darray,ncustom_darray,"particle:icustom_darray");
       icustom_darray[ncustom_darray-1] = index;
       memoryKK->grow_kokkos(k_edcol,edcol,ncustom_darray,"particle:edcol");

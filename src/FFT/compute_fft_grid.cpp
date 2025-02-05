@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    SPARTA - Stochastic PArallel Rarefied-gas Time-accurate Analyzer
-   http://sparta.sandia.gov
+   http://sparta.github.io
    Steve Plimpton, sjplimp@gmail.com, Michael Gallis, magalli@sandia.gov
    Sandia National Laboratories
 
@@ -722,12 +722,12 @@ void ComputeFFTGrid::fft_create()
 
   int tmp;
   if (dimension == 3) {
-    fft3d = new FFT3D(sparta,world,nx,ny,nz,
+    fft3d = new FFT3d(sparta,world,nx,ny,nz,
                       nxlo,nxhi,nylo,nyhi,nzlo,nzhi,
                       nxlo,nxhi,nylo,nyhi,nzlo,nzhi,
                       0,0,&tmp,collective_flag);
   } else {
-    fft2d = new FFT2D(sparta,world,nx,ny,
+    fft2d = new FFT2d(sparta,world,nx,ny,
                       nxlo,nxhi,nylo,nyhi,nxlo,nxhi,nylo,nyhi,
                       0,0,&tmp,collective_flag);
   }
