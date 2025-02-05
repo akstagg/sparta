@@ -129,6 +129,9 @@ class CollideVSSKokkos : public CollideVSS {
   void reduce_kokkos(int, int, double, double *, double, double, double *, double [3][3], int, rand_type &) const;
 
   KOKKOS_INLINE_FUNCTION
+  int compress_positive_weight_particles_kokkos(int, int) const;
+
+  KOKKOS_INLINE_FUNCTION
   void operator()(TagCollideResetVremax, const int&) const;
 
   KOKKOS_INLINE_FUNCTION

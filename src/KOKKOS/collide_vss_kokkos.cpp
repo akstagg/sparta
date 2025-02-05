@@ -3083,6 +3083,75 @@ void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, con
   double d1, d2;
   double lLim, uLim;
 
+  int n = compress_positive_weight_particles_kokkos(np, icell);
+
+  int nold;
+  double gbuf_kk = 0;
+  while (n > Ncmax) {
+    nold = n;
+    if (group_type == BINARY) {
+      group_bt_kokkos(0, n, gbuf_kk, rand_gen, icell);
+      if (d_retry()) {
+        rand_pool.free_state(rand_gen);
+        return;
+      }
+    } else if (group_type == WEIGHT) {
+
+      // find mean / standard deviation of weight
+      swmean = 0.0;
+      swvar = 0.0;
+      int num_positive_weight = n;
+      n = 0;
+      while (n < num_positive_weight) {
+        double isw = d_particles[d_plist(icell,n)].weight;
+
+        // incremental variance
+        n++;
+        d1 = isw - swmean;
+        swmean += (d1/n);
+        swvar += (n-1.0)/n*d1*d1;
+      }
+      swstd = sqrt(swvar/n);
+
+      lLim = MAX(swmean-1.25*swstd,0);
+      uLim = swmean+2.0*swstd;
+
+
+
+
+      //------------------------this section needs to be redone according to what Andrew will redo in collide_swpm.cpp (AKS)---------
+      // re-sort particle list to omit large weighted particles
+      int cp = 0;     // index of center particle
+      int np_red = 0; // number of particles to reduce
+      for (int n = 0; n<num_positive_weight; n++) {
+        double isw = d_particles[d_plist(icell,n)].weight;
+        if (isw < lLim) {
+          ;
+        }
+      }
+      //------------------------------------------------------------------------------------------------------------------------------
+
+
+
+      // can reuse binary tree division here
+      group_bt_kokkos(0, cp, gbuf_kk, rand_gen, icell);
+      group_bt_kokkos(cp, np_red, gbuf_kk, rand_gen, icell);
+
+      // recreate particle list after reduction
+      n = compress_positive_weight_particles_kokkos(np, icell);
+
+      if (n == nold) gbuf_kk += 2;
+      if (gbuf_kk > n) break;
+    }
+  }
+
+  rand_pool.free_state(rand_gen);
+  return;
+}
+
+KOKKOS_INLINE_FUNCTION
+int CollideVSSKokkos::compress_positive_weight_particles_kokkos(int np, int icell) const {
+
   // compress and shift positive-weight particles to the start of the list
   int n = 0; // storing number of positive-weight particles
   int end_idx = np-1;
@@ -3112,48 +3181,7 @@ void CollideVSSKokkos::operator()(TagCollideGroupReduce< ATOMIC_REDUCTION >, con
         break;
     }
   }
-
-  int nold;
-  double gbuf_kk = 0;
-  while (n > Ncmax) {
-    nold = n;
-    if (group_type == BINARY) {
-      group_bt_kokkos(0, n, gbuf_kk, rand_gen, icell);
-      if (d_retry()) {
-        rand_pool.free_state(rand_gen);
-        return;
-      }
-    } else if (group_type == WEIGHT) {
-
-      // find mean / standard deviation of weight
-      swmean = 0.0;
-      swvar = 0.0;
-      n = 0;
-      for (int pidx = 0; pidx < np; pidx++) {
-        double isw = d_particles[d_plist(icell,pidx)].weight;
-
-        // incremental variance
-        if (isw > 0.) {
-          n++;
-          d1 = isw - swmean;
-          swmean += (d1/n);
-          swvar += (n-1.0)/n*d1*d1;
-        }
-      }
-      swstd = sqrt(swvar/n);
-
-      lLim = MAX(swmean-1.25*swstd,0);
-      uLim = swmean+2.0*swstd;
-
-      // recreate particle list and omit large weighted particles
-
-      //......stopped here (depends on Andrew's upcoming changes: AKS
-
-
-    }
-  }
-
-  rand_pool.free_state(rand_gen);
+  return n;
 }
 
 KOKKOS_INLINE_FUNCTION
